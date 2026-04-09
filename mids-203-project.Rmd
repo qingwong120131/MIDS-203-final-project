@@ -1,9 +1,10 @@
 ---
-  title: "mids-203-project"
+title: "mids-203-project"
 output: html_document
 date: "2026-04-09"
 ---
-  ```{r cars}
+
+```{r cars}
 # Load libraries
 library(ggplot2)
 
@@ -12,6 +13,10 @@ df <- read.csv("merged_raw_all_years.csv")
 dim(df)
 ```
 
+Added column names bc i got a little confused -Malachi
+```{r}
+colnames(df)[grepl("PFL|FSS|CDA|CHA|FGA|NDA", colnames(df))]
+```
 First task: examine the data for cleanliness issues
 
 - Realizing that a lot of the variables in the dataset are missing like 50% of the rows...so let's first rank all the possible Y variables (in 'ecosystem vitality on page 3') and X variables (in 'climate change on page 4') based on how many NA rows there are, then choose based on a tradeoff between relevance and # of missing rows.
@@ -58,7 +63,7 @@ Most relevant Y-variables would be:
 
 Now to look at the x-variables:
   
-  ```{r}
+```{r}
 climate_vars <- c(
   # Climate Change Mitigation
   "CDA",  # Adjusted emissions growth rate for CO2
@@ -71,7 +76,7 @@ climate_vars <- c(
   "GTI",  # GHG growth rate adjusted by emissions intensity
   "GTP",  # GHG growth rate adjusted by per capita emissions
   "GHN",  # Projected emissions in 2050
-  "CBP",   # Projected cumulative emissions to 2050 relative to carbon budget,
+  "CBP"   # Projected cumulative emissions to 2050 relative to carbon budget,
 )
 
 climate_col_matches <- colnames(df)[
@@ -121,3 +126,83 @@ summary(df_2019_clean[, cols_matched])
 ```
 It appears that for 2019, which is the last year that we still have fisheries data (FSS), we only have 43 countries that have data for all the variables of interest.
 
+Checking pairwise for countries if we just do a direct X and Y relationship
+```{r}
+vars_y <- c("PFL", "FSS")
+vars_x <- c("CDA", "CHA", "FGA", "NDA")
+control <- "GDP"
+year <- "2019"
+
+pair_2019 <- do.call(rbind, lapply(vars_y, function(yv) {
+  do.call(rbind, lapply(vars_x, function(xv) {
+    cols <- c(
+      paste0(yv, ".raw.", year),
+      paste0(xv, ".raw.", year),
+      paste0(control, ".raw.", year)
+    )
+    
+    temp <- df[, c("country", cols)]
+    
+    data.frame(
+      y_var = yv,
+      x_var = xv,
+      year = as.integer(year),
+      n_countries = nrow(na.omit(temp))
+    )
+  }))
+}))
+
+pair_2019[order(-pair_2019$n_countries), ]
+```
+
+Checking Year overlaps
+```{r}
+vars_y <- c("PFL", "FSS")
+vars_x <- c("CDA", "CHA", "FGA", "NDA")
+
+get_years <- function(var, data) {
+  cols <- colnames(data)[grepl(paste0("^", var, "\\.raw\\."), colnames(data))]
+  sub(paste0("^", var, "\\.raw\\.(\\d{4})$"), "\\1", cols)
+}
+
+count_pair_nonmissing <- function(y_var, x_var, year, data) {
+  y_col <- paste0(y_var, ".raw.", year)
+  x_col <- paste0(x_var, ".raw.", year)
+  
+  if (!(y_col %in% colnames(data)) || !(x_col %in% colnames(data))) return(NA_integer_)
+  
+  sum(!is.na(data[[y_col]]) & !is.na(data[[x_col]]))
+}
+
+pair_results <- do.call(rbind, lapply(vars_y, function(yv) {
+  do.call(rbind, lapply(vars_x, function(xv) {
+    
+    overlap_years <- sort(intersect(get_years(yv, df), get_years(xv, df)))
+    
+    if (length(overlap_years) == 0) {
+      return(data.frame(
+        y_var = yv,
+        x_var = xv,
+        n_overlap_years = 0,
+        overlap_years = NA_character_,
+        best_year = NA_character_,
+        best_n_complete = NA_integer_
+      ))
+    }
+    
+    counts <- sapply(overlap_years, function(yr) count_pair_nonmissing(yv, xv, yr, df))
+    best_idx <- which.max(counts)
+    
+    data.frame(
+      y_var = yv,
+      x_var = xv,
+      n_overlap_years = length(overlap_years),
+      overlap_years = paste(overlap_years, collapse = ", "),
+      best_year = overlap_years[best_idx],
+      best_n_complete = counts[best_idx]
+    )
+  }))
+}))
+
+pair_results[order(-pair_results$best_n_complete), ]
+```
