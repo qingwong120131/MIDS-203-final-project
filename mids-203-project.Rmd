@@ -57,8 +57,7 @@ Most relevant Y-variables would be:
 - Could consider using TBN (terrestrial biome protection/biodiversity/ecosystem vitality) - not ideal but it has no missing data
 
 Now to look at the x-variables:
-  
-  ```{r}
+```{r}
 climate_vars <- c(
   # Climate Change Mitigation
   "CDA",  # Adjusted emissions growth rate for CO2
@@ -71,11 +70,15 @@ climate_vars <- c(
   "GTI",  # GHG growth rate adjusted by emissions intensity
   "GTP",  # GHG growth rate adjusted by per capita emissions
   "GHN",  # Projected emissions in 2050
-  "CBP",   # Projected cumulative emissions to 2050 relative to carbon budget,
+  "CBP"   # Projected cumulative emissions to 2050 relative to carbon budget
 )
 
+raw_vars <- c("CDO", "CH4", "FOG", "NOT", "BLC", "LUE")
+
+all_x <- c(climate_vars, raw_vars)
+
 climate_col_matches <- colnames(df)[
-  grepl(paste(climate_vars, collapse = "|"), colnames(df)) &
+  grepl(paste(all_x, collapse = "|"), colnames(df)) &
     grepl("2019$", colnames(df))
 ]
 
@@ -83,8 +86,6 @@ df_climate = df[, climate_col_matches]
 
 # sort each column in the ecosystem vitality (ECO) category by the number of NAs in the year 2019
 sort(colSums(is.na(df_climate)))
-
-
 ```
 
 The x-variables we might use are basically all missing 20-30 rows, not bad. We can then choose based purely on what's most relevant:
@@ -120,4 +121,138 @@ dim(df_2019_clean)
 summary(df_2019_clean[, cols_matched])
 ```
 It appears that for 2019, which is the last year that we still have fisheries data (FSS), we only have 43 countries that have data for all the variables of interest.
+
+What about certain combinations of single Y and multiple X:
+
+```{r}
+#vars_x <- c("CDO", "CH4","FOG", "NOT")
+vars_x <- c("CDO", "FOG")
+
+vars_z <- c("GDP")
+
+var_sets <- list(
+  PFL = c("PFL", vars_x, vars_z),
+  FSS = c("FSS", vars_x, vars_z),
+  FCL = c("FCL", vars_x, vars_z)
+)
+
+get_clean_dim <- function(df, vars, year = "2019") {
+  cols_matched <- colnames(df)[
+    grepl(paste(vars, collapse = "|"), colnames(df)) &
+    grepl(paste0(year, "$"), colnames(df))
+  ]
+  
+  df_subset <- df[, c("code", "iso", "country", cols_matched)]
+  df_clean <- na.omit(df_subset)
+  
+  dim(df_clean)
+}
+
+# Apply to each variable set
+results <- lapply(var_sets, function(vars) {
+  get_clean_dim(df, vars)
+})
+
+results
+
+```
+Run a PCA on the x-variables:
+
+```{r}
+climate_vars <- c(
+  # Climate Change Mitigation
+  "CDA",  # Adjusted emissions growth rate for CO2
+  "CDF",  # CO2 growth rate (country-specific targets)
+  "CHA",  # Adjusted emissions growth rate for methane
+  "FGA",  # Adjusted emissions growth rate for F-gases
+  "NDA",  # Adjusted emissions growth rate for nitrous oxide
+  "BCA",  # Adjusted emissions growth rate for black carbon
+  "LUF",  # Net carbon fluxes due to land cover change
+  "GTI",  # GHG growth rate adjusted by emissions intensity
+  "GTP",  # GHG growth rate adjusted by per capita emissions
+  "GHN",  # Projected emissions in 2050
+  "CBP"   # Projected cumulative emissions to 2050 relative to carbon budget
+)
+
+raw_vars <- c("CDO", "CH4", "FOG", "NOT", "BLC", "GDP", "POP", "LUE")
+
+all_x <- c(climate_vars, raw_vars)
+
+climate_col_matches <- colnames(df)[
+  grepl(paste(all_x, collapse = "|"), colnames(df)) &
+    grepl("2019$", colnames(df))
+]
+
+df_climate = df[, climate_col_matches]
+df_climate_clean <- na.omit(df_climate)
+
+pca_climate <- prcomp(df_climate_clean, center = TRUE, scale. = TRUE)
+
+plot(pca_climate$rotation[,1], pca_climate$rotation[,2],
+     xlab = "PC1", ylab = "PC2",
+     main = "PCA Loadings Plot",
+     pch = 19)
+
+text(pca_climate$rotation[,1], pca_climate$rotation[,2],
+     labels = rownames(pca_climate$rotation),
+     pos = 3, cex = 0.8)
+
+loadings_df <- as.data.frame(pca_climate$rotation)
+round(loadings_df[, 1:2], 3)  # PC1 and PC2
+
+par(mar = c(8, 4, 4, 2))  # increase bottom margin for labels
+
+barplot(pca_climate$rotation[,1],
+        main = "PC1 Loadings",
+        las = 2,              # makes labels vertical (closest base option)
+        cex.names = 0.8)      # shrink labels if needed
+
+barplot(pca_climate$rotation[,2],
+        main = "PC2 Loadings",
+        las = 2,              # makes labels vertical (closest base option)
+        cex.names = 0.8)      # shrink labels if needed
+
+```
+
+
+```{r}
+plot(log(GDP.raw.2019) ~ log(CDO.raw.2019),
+     data = df,
+     xlab = "log(CO2 Emissions)",
+     ylab = "log(GDP)",
+     main = "Log-Log GDP vs CO2 (2019)",
+     pch = 19)
+
+plot(log(FSS.raw.2019) ~ log(CDO.raw.2019),
+     data = df,
+     xlab = "log(CO2 Emissions)",
+     ylab = "log(FSS)",
+     main = "Log-Log FSS vs CO2 (2019)",
+     pch = 19)
+
+plot(log(PFL.raw.2019) ~ log(CDO.raw.2019),
+     data = df,
+     xlab = "log(CO2 Emissions)",
+     ylab = "log(PFL)",
+     main = "Log-Log PFL vs CO2 (2019)",
+     pch = 19)
+```
+
+plot some distributions
+
+```{r}
+hist(log(df$CDO.raw.2019))
+hist(df$FSS.raw.2019)
+hist(df$PFL.raw.2019)
+```
+
+
+```{r}
+plot(log(PFL.raw.2019) ~ CDA.raw.2019,
+     data = df,
+     xlab = "log(CDA)",
+     ylab = "log(PFL)",
+     main = "Log-Log PFL vs CDA (2019)",
+     pch = 19)
+```
 
