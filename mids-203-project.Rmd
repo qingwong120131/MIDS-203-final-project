@@ -1,15 +1,123 @@
 ---
-title: "mids-203-project"
+  title: "mids-203-project"
 output: html_document
 date: "2026-04-09"
 ---
-
-
-```{r cars}
+  ```{r cars}
 # Load libraries
 library(ggplot2)
 
 # Read CSV (adjust path as needed)
 df <- read.csv("merged_raw_all_years.csv")
+dim(df)
+```
+
+First task: examine the data for cleanliness issues
+
+- Realizing that a lot of the variables in the dataset are missing like 50% of the rows...so let's first rank all the possible Y variables (in 'ecosystem vitality on page 3') and X variables (in 'climate change on page 4') based on how many NA rows there are, then choose based on a tradeoff between relevance and # of missing rows.
+- I'm using 2019, which is the last year with fisheries data (see page 130/131)
+
+```{r}
+ecosystem_vars <- c(
+  # Biodiversity & Habitat
+  "MKP", "MHP", "MPE", "PAR", "SPI", "TBN", "TKP", "PAE", "PHL", "RLI", "SHI", "BER",
+  
+  # Forests
+  "PFL", "IFL", "FCL", "TCG", "FLI",
+  
+  # Fisheries
+  "FSS", "FCD", "BTZ", "BTO", "RMS",
+  
+  # Air Pollution
+  "OEB", "OEC", "NXA", "SDA",
+  
+  # Agriculture
+  "SNM", "PSU", "PRS", "RCY",
+  
+  # Water Resources
+  "WWG", "WWC", "WWT", "WWR"
+)
+
+eco_col_matches <- colnames(df)[
+  grepl(paste(ecosystem_vars, collapse = "|"), colnames(df)) &
+    grepl("2019$", colnames(df))
+]
+
+df_ecosystem = df[, eco_col_matches]
+
+# sort each column in the ecosystem vitality (ECO) category by the number of NAs in the year 2019
+sort(colSums(is.na(df_ecosystem)))
 
 ```
+Most relevant Y-variables would be:
+  - PFL (primary forest loss) - 137 missing rows out of 220
+- Alternative: FCL (74 missing rows)
+- FSS (fish stock status) - 102 missing rows out of 220
+- Alternative: RLI/SHI - 2 and 43 missing rows
+- Could consider using TBN (terrestrial biome protection/biodiversity/ecosystem vitality) - not ideal but it has no missing data
+
+Now to look at the x-variables:
+  
+  ```{r}
+climate_vars <- c(
+  # Climate Change Mitigation
+  "CDA",  # Adjusted emissions growth rate for CO2
+  "CDF",  # CO2 growth rate (country-specific targets)
+  "CHA",  # Adjusted emissions growth rate for methane
+  "FGA",  # Adjusted emissions growth rate for F-gases
+  "NDA",  # Adjusted emissions growth rate for nitrous oxide
+  "BCA",  # Adjusted emissions growth rate for black carbon
+  "LUF",  # Net carbon fluxes due to land cover change
+  "GTI",  # GHG growth rate adjusted by emissions intensity
+  "GTP",  # GHG growth rate adjusted by per capita emissions
+  "GHN",  # Projected emissions in 2050
+  "CBP",   # Projected cumulative emissions to 2050 relative to carbon budget,
+)
+
+climate_col_matches <- colnames(df)[
+  grepl(paste(climate_vars, collapse = "|"), colnames(df)) &
+    grepl("2019$", colnames(df))
+]
+
+df_climate = df[, climate_col_matches]
+
+# sort each column in the ecosystem vitality (ECO) category by the number of NAs in the year 2019
+sort(colSums(is.na(df_climate)))
+
+
+```
+
+The x-variables we might use are basically all missing 20-30 rows, not bad. We can then choose based purely on what's most relevant:
+- CDO (carbon dioxide emissions)
+- CH4 (methane emissions)
+- FOG (F-gas emissions)
+- NOT (N2O emissions)
+
+We can also investigate how much missing data is in the GDP for 2019:
+```{r}
+sum(is.na(df[, 'GDP.raw.2019']))
+```
+
+What if we looked at only our best variables of interest and saw how small that dataset would be?
+
+```{r}
+vars_y <- c("PFL", "FSS")
+vars_x <- c("CDO", "CH4", "FOG", "NOT")
+vars_z <- c("GDP")
+patterns <- c(vars_y,vars_x,vars_z)
+
+
+cols_matched <- colnames(df)[
+  grepl(paste(patterns, collapse = "|"), colnames(df)) &
+  grepl("2019$", colnames(df))
+]
+
+df_2019 <- df[, c("code", "iso", "country", cols_matched)]
+# How much data are we left with if we remove all rows with NA in any of these columns of interest?
+
+df_2019_clean <- na.omit(df_2019)
+dim(df_2019_clean)
+summary(df_2019_clean[, cols_matched])
+```
+It appears that for 2019, which is the last year that we still have fisheries data (FSS), we only have 43 countries that have data for all the variables of interest.
+
