@@ -1,0 +1,15 @@
+---
+title: "mids-203-project"
+output: html_document
+date: "2026-04-09"
+---
+
+
+```{r cars}
+# Load libraries
+library(ggplot2)
+
+# Read CSV (adjust path as needed)
+df <- read.csv("merged_raw_all_years.csv")
+
+```
