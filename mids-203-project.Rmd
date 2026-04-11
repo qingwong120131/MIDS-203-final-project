@@ -3,7 +3,7 @@
 output: html_document
 date: "2026-04-09"
 ---
-  ```{r cars}
+```{r}
 # Load libraries
 library(ggplot2)
 
@@ -126,6 +126,7 @@ get_clean_dim <- function(df, y_var, x_vars = vars_x, year = "2019") {
     grepl(paste(c(y_var, x_vars), collapse = "|"), colnames(df)) &
       grepl(paste0(year, "$"), colnames(df))
   ]
+  print(cols)
   
   df_subset <- df[, c("code", "iso", "country", cols), drop = FALSE]
   df_clean <- na.omit(df_subset)
@@ -175,103 +176,101 @@ plot_histograms(vars_y, "Raw vs. Log10 y-variables")
 ```
 
 
-Run a PCA on the x-variables:
+Now I look for collinearity between the variables:
 
 ```{r}
-climate_vars <- c(
-  # Climate Change Mitigation
-  "CDA",  # Adjusted emissions growth rate for CO2
-  "CDF",  # CO2 growth rate (country-specific targets)
-  "CHA",  # Adjusted emissions growth rate for methane
-  "FGA",  # Adjusted emissions growth rate for F-gases
-  "NDA",  # Adjusted emissions growth rate for nitrous oxide
-  "BCA",  # Adjusted emissions growth rate for black carbon
-  "LUF",  # Net carbon fluxes due to land cover change
-  "GTI",  # GHG growth rate adjusted by emissions intensity
-  "GTP",  # GHG growth rate adjusted by per capita emissions
-  "GHN",  # Projected emissions in 2050
-  "CBP"   # Projected cumulative emissions to 2050 relative to carbon budget
-)
+# Scatterplot matrix of x-variables and y-variables
 
-raw_vars <- c("CDO", "CH4", "FOG", "NOT", "BLC", "GDP", "POP", "LUE")
+get_cols <- function(vars,year) {
+  cols <- colnames(df)[
+    grepl(paste(vars, collapse = "|"), colnames(df)) &
+      grepl(paste0(year, "$"), colnames(df))
+  ]
+  return(cols)
+}
 
-all_x <- c(climate_vars, raw_vars)
+x <- get_cols(vars_x,2019)
+y <- get_cols(vars_y,2019)
 
-climate_col_matches <- colnames(df)[
-  grepl(paste(all_x, collapse = "|"), colnames(df)) &
-    grepl("2019$", colnames(df))
-]
+# Log-transformed all numeric variables
+df_log <- df[, c('iso','code','country',x,y)]
+df_log[, c(x, y)] <- log(df[, c(x, y)])
 
-df_climate = df[, climate_col_matches]
-df_climate_clean <- na.omit(df_climate)
+# Scatterplot matrix of x
+x_log_clean <- na.omit(df_log[,c('iso','code','country',x)])
+pairs(x_log_clean[x])
 
-pca_climate <- prcomp(df_climate_clean, center = TRUE, scale. = TRUE)
+# Scatterplot matrix of y
+y_log_clean <- na.omit(df_log[,c('iso','code','country',y)])
+pairs(y_log_clean[y])
 
-plot(pca_climate$rotation[,1], pca_climate$rotation[,2],
+# x variables
+r2_x <- cor(x_log_clean[,x])^2
+r2_x
+
+# y variables
+r2_y <- cor(y_log_clean[,y])^2
+r2_y
+```
+```{r}
+pca_x <- prcomp(x_log_clean[,x], center = TRUE, scale. = TRUE)
+
+var_explained <- pca_x$sdev^2
+prop_var_explained <- var_explained / sum(var_explained)
+print(prop_var_explained)
+
+lims <- max(abs(pca_x$rotation[,1:2]))
+
+plot(pca_x$rotation[,1], pca_x$rotation[,2],
+     xlim = c(-lims, lims),
+     ylim = c(-lims, lims),
      xlab = "PC1", ylab = "PC2",
      main = "PCA Loadings Plot",
      pch = 19)
 
-text(pca_climate$rotation[,1], pca_climate$rotation[,2],
-     labels = rownames(pca_climate$rotation),
+abline(h = 0, v = 0, col = "gray")
+
+text(pca_x$rotation[,1], pca_x$rotation[,2],
+     labels = rownames(pca_x$rotation),
      pos = 3, cex = 0.8)
 
-loadings_df <- as.data.frame(pca_climate$rotation)
+loadings_df <- as.data.frame(pca_x$rotation)
 round(loadings_df[, 1:2], 3)  # PC1 and PC2
 
 par(mar = c(8, 4, 4, 2))  # increase bottom margin for labels
 
-barplot(pca_climate$rotation[,1],
+barplot(pca_x$rotation[,1],
         main = "PC1 Loadings",
         las = 2,              # makes labels vertical (closest base option)
         cex.names = 0.8)      # shrink labels if needed
 
-barplot(pca_climate$rotation[,2],
+barplot(pca_x$rotation[,2],
         main = "PC2 Loadings",
         las = 2,              # makes labels vertical (closest base option)
         cex.names = 0.8)      # shrink labels if needed
 
 ```
 
+Conclusions from PCA are that we can reduce dimensionality (esp PC1).
 
 ```{r}
-plot(log(GDP.raw.2019) ~ log(CDO.raw.2019),
-     data = df,
-     xlab = "log(CO2 Emissions)",
-     ylab = "log(GDP)",
-     main = "Log-Log GDP vs CO2 (2019)",
-     pch = 19)
+# add pc1 and pc2 to log x-variable df
+x_log_clean$PC1 <- pca_x$x[,1]
+x_log_clean$PC2 <- pca_x$x[,2]
 
-plot(log(FSS.raw.2019) ~ log(CDO.raw.2019),
-     data = df,
-     xlab = "log(CO2 Emissions)",
-     ylab = "log(FSS)",
-     main = "Log-Log FSS vs CO2 (2019)",
-     pch = 19)
-
-plot(log(PFL.raw.2019) ~ log(CDO.raw.2019),
-     data = df,
-     xlab = "log(CO2 Emissions)",
-     ylab = "log(PFL)",
-     main = "Log-Log PFL vs CO2 (2019)",
-     pch = 19)
+# merge back into y-variable df
+df_log_pc <- merge(df_log, x_log_clean[, c('iso','code','country','PC1','PC2')], by = c('iso','code','country'))
 ```
 
-plot some distributions
-
 ```{r}
-hist(log(df$CDO.raw.2019))
-hist(df$FSS.raw.2019)
-hist(df$PFL.raw.2019)
-```
-
-
-```{r}
-plot(log(PFL.raw.2019) ~ CDA.raw.2019,
-     data = df,
-     xlab = "log(CDA)",
-     ylab = "log(PFL)",
-     main = "Log-Log PFL vs CDA (2019)",
-     pch = 19)
+y <- get_cols(vars_y,2019)
+print(y)
+for (y_var in y) {
+  plot(df_log_pc[[y_var]] ~ df_log_pc$PC1,
+       main = y_var,
+       xlab = "PC1",
+       ylab = y_var,
+       pch = 19)
+}
 ```
 
