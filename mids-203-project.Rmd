@@ -126,83 +126,239 @@ summary(df_2019_clean[, cols_matched])
 ```
 It appears that for 2019, which is the last year that we still have fisheries data (FSS), we only have 43 countries that have data for all the variables of interest.
 
-Checking pairwise for countries if we just do a direct X and Y relationship
-```{r}
-vars_y <- c("PFL", "FSS")
-vars_x <- c("CDA", "CHA", "FGA", "NDA")
-control <- "GDP"
-year <- "2019"
 
-pair_2019 <- do.call(rbind, lapply(vars_y, function(yv) {
-  do.call(rbind, lapply(vars_x, function(xv) {
-    cols <- c(
-      paste0(yv, ".raw.", year),
-      paste0(xv, ".raw.", year),
-      paste0(control, ".raw.", year)
-    )
-    
-    temp <- df[, c("country", cols)]
-    
-    data.frame(
-      y_var = yv,
-      x_var = xv,
-      year = as.integer(year),
-      n_countries = nrow(na.omit(temp))
-    )
-  }))
+
+
+Checking correlation and colinearity... might be fishing...
+```{r}
+library(dplyr)
+
+year <- "2006"
+y_var <- "PFL"
+x_vars <- c("CDA", "CHA", "FGA", "NDA", "GDP")
+
+#build crosssection
+cols <- c("country", "iso", "code",
+          paste0(y_var, ".raw.", year),
+          paste0(x_vars, ".raw.", year))
+cols <- cols[cols %in% names(df)]
+
+df_2006 <- df[, cols, drop = FALSE]
+names(df_2006) <- sub(paste0("\\.raw\\.", year, "$"), "", names(df_2006))
+
+# pairwise screening: n, correlation, p-value, R^2
+pair_results <- do.call(rbind, lapply(x_vars, function(xv) {
+  temp <- df_2006[, c("country", y_var, xv)]
+  temp <- temp[complete.cases(temp), ]
+  names(temp) <- c("country", "y", "x")
+  
+  m <- lm(y ~ x, data = temp)
+  sm <- summary(m)
+  
+  data.frame(
+    x_var = xv,
+    n = nrow(temp),
+    cor = cor(temp$y, temp$x),
+    p_value = sm$coefficients[2, 4],
+    r_squared = sm$r.squared
+  )
 }))
 
-pair_2019[order(-pair_2019$n_countries), ]
+pair_results <- pair_results[order(-abs(pair_results$cor)), ]
+print(pair_results)
+
+# check colin
+x_complete <- df_2006[, c("country", x_vars)]
+x_complete <- x_complete[complete.cases(x_complete), ]
+
+cat("\nX correlation matrix:\n")
+print(round(cor(x_complete[, x_vars]), 3))
+
+# scatterplots
+par(mfrow = c(2, 2), mar = c(4,4,2,1))
+for (xv in x_vars) {
+  temp <- df_2006[, c(y_var, xv)]
+  temp <- temp[complete.cases(temp), ]
+  plot(temp[[xv]], temp[[y_var]],
+       xlab = xv, ylab = y_var,
+       main = paste0(y_var, " vs ", xv,
+                     "\n n=", nrow(temp),
+                     " | r=", round(cor(temp[[xv]], temp[[y_var]]), 3)),
+       pch = 19, col = rgb(0.2, 0.4, 0.8, 0.5))
+  abline(lm(as.formula(paste(y_var, "~", xv)), data = temp), col = "red", lwd = 2)
+}
+par(mfrow = c(1,1))
 ```
 
-Checking Year overlaps
+No large correlatino so we can stack x values in another model potentially. Also, this might be considered fishing but FDA has the highest correlation with FCL so im going to start off with that for the model. 
+
+Checking which transform (log or no log) is best for the vars that we wanna do
 ```{r}
-vars_y <- c("PFL", "FSS")
-vars_x <- c("CDA", "CHA", "FGA", "NDA")
+year <- "2006"
+y_var <- "PFL"
+x_vars <- c("FGA", "CHA", "NDA", "GDP")
 
-get_years <- function(var, data) {
-  cols <- colnames(data)[grepl(paste0("^", var, "\\.raw\\."), colnames(data))]
-  sub(paste0("^", var, "\\.raw\\.(\\d{4})$"), "\\1", cols)
+cols <- c("country", "iso", "code",
+          paste0(y_var, ".raw.", year),
+          paste0(x_vars, ".raw.", year))
+cols <- cols[cols %in% names(df)]
+
+df_2006 <- df[, cols, drop = FALSE]
+names(df_2006) <- sub(paste0("\\.raw\\.", year, "$"), "", names(df_2006))
+
+# transformed versions
+df_2006$log_PFL    <- log(pmax(df_2006$PFL, 1e-10))
+df_2006$log1p_PFL  <- log1p(df_2006$PFL)
+
+for (xv in x_vars) {
+  df_2006[[paste0("log_", xv)]]   <- log(pmax(df_2006[[xv]], 1e-10))
+  df_2006[[paste0("log1p_", xv)]] <- log1p(df_2006[[xv]])
 }
 
-count_pair_nonmissing <- function(y_var, x_var, year, data) {
-  y_col <- paste0(y_var, ".raw.", year)
-  x_col <- paste0(x_var, ".raw.", year)
-  
-  if (!(y_col %in% colnames(data)) || !(x_col %in% colnames(data))) return(NA_integer_)
-  
-  sum(!is.na(data[[y_col]]) & !is.na(data[[x_col]]))
-}
+# histograms
+par(mfrow = c(4, 3), mar = c(3,3,2,1))
 
-pair_results <- do.call(rbind, lapply(vars_y, function(yv) {
-  do.call(rbind, lapply(vars_x, function(xv) {
-    
-    overlap_years <- sort(intersect(get_years(yv, df), get_years(xv, df)))
-    
-    if (length(overlap_years) == 0) {
-      return(data.frame(
-        y_var = yv,
-        x_var = xv,
-        n_overlap_years = 0,
-        overlap_years = NA_character_,
-        best_year = NA_character_,
-        best_n_complete = NA_integer_
-      ))
-    }
-    
-    counts <- sapply(overlap_years, function(yr) count_pair_nonmissing(yv, xv, yr, df))
-    best_idx <- which.max(counts)
-    
-    data.frame(
-      y_var = yv,
-      x_var = xv,
-      n_overlap_years = length(overlap_years),
-      overlap_years = paste(overlap_years, collapse = ", "),
-      best_year = overlap_years[best_idx],
-      best_n_complete = counts[best_idx]
-    )
-  }))
-}))
+#hist(df_2006$PFL, main = "Raw PFL", xlab = "PFL", col = "gray")
 
-pair_results[order(-pair_results$best_n_complete), ]
+hist(df_2006$log_PFL, main = "log(PFL)", xlab = "log(PFL)", col = "gray")
+
+#dont use log1p for PFL - ugly skew
+#hist(df_2006$log1p_PFL, main = "log1p(PFL)", xlab = "log1p(PFL)", col = "gray")
+
+#using log1p cuz best dist
+#hist(df_2006$FGA, main = "Raw FGA", xlab = "FGA", col = "gray")
+#hist(df_2006$log_FGA, main = "log(FGA)", xlab = "log(FGA)", col = "gray")
+
+hist(df_2006$log1p_FGA, main = "log1p(FGA)", xlab = "log1p(FGA)", col = "gray")
+
+#keep raw bc dist is already bell curved
+
+hist(df_2006$CHA, main = "Raw CHA", xlab = "CHA", col = "gray")
+
+#hist(df_2006$log_CHA, main = "log(CHA)", xlab = "log(CHA)", col = "gray")
+#hist(df_2006$log1p_CHA, main = "log1p(CHA)", xlab = "log1p(CHA)", col = "gray")
+
+#raw next question
+hist(df_2006$NDA, main = "Raw NDA", xlab = "NDA", col = "gray")
+
+#hist(df_2006$log_NDA, main = "log(NDA)", xlab = "log(NDA)", col = "gray")
+#hist(df_2006$log1p_NDA, main = "log1p(NDA)", xlab = "log1p(NDA)", col = "gray")
+
+par(mfrow = c(1,1))
 ```
+Used different log transforms for these data points to get the safest looking distribution. 
+Came up with log(FPL), log1p(FGA), raw CHA and raw NDA
+
+Doing GDP
+```{r}
+if (!"GDP" %in% names(df_2006)) {
+  gdp_col <- "GDP.raw.2006"
+  if (gdp_col %in% names(df)) {
+    df_2006$GDP <- df[[gdp_col]]
+  }
+}
+
+df_2006$log_GDP   <- log(pmax(df_2006$GDP, 1e-10))
+df_2006$log1p_GDP <- log1p(df_2006$GDP)
+
+par(mfrow = c(1, 3), mar = c(4,4,2,1))
+#hist(df_2006$GDP, breaks = 20, main = "Raw GDP", xlab = "GDP", col = "gray")
+hist(df_2006$log_GDP, breaks = 20, main = "log(GDP)", xlab = "log(GDP)", col = "gray")
+#hist(df_2006$log1p_GDP, breaks = 20, main = "log1p(GDP)", xlab = "log1p(GDP)", col = "gray")
+par(mfrow = c(1,1))
+
+summary(df_2006[, c("GDP", "log_GDP", "log1p_GDP")])
+```
+
+Models
+```{r}
+model_df <- df_2006[, c("country", "log_PFL", "log1p_FGA", "CHA", "NDA")]
+model_df <- model_df[complete.cases(model_df), ]
+
+# Model 1: simplest credible model
+m1 <- lm(log_PFL ~ log1p_FGA, data = model_df)
+summary(m1)
+```
+
+```{r}
+model_df <- df_2006[, c("country", "log_PFL", "log1p_FGA", "CHA", "NDA")]
+model_df <- model_df[complete.cases(model_df), ]
+
+# Model 2: extra x vars
+m2 <- lm(log_PFL ~ log1p_FGA + CHA + NDA, data = model_df)
+
+summary(m2)
+```
+
+```{r}
+model_df <- df_2006[, c("country", "log_PFL", "log1p_FGA", "CHA", "NDA", "log_GDP")]
+model_df <- model_df[complete.cases(model_df), ]
+
+# Model 3: trying to add GDP
+m3 <- lm(log_PFL ~ log1p_FGA + CHA + NDA + log_GDP, data = model_df)
+
+summary(m3)
+```
+```{r}
+model_df <- df_2006[, c("country", "log_PFL", "log1p_FGA", "log_GDP")]
+model_df <- model_df[complete.cases(model_df), ]
+
+# Model 4: trying only GDP
+m4 <- lm(log_PFL ~ log1p_FGA + log_GDP, data = model_df)
+
+summary(m4)
+```
+Testing on 2022 data now
+```{r}
+df_test <- df[, c("country", "PFL.raw.2022", "FGA.raw.2022", "CHA.raw.2022", "NDA.raw.2022", "GDP.raw.2022")]
+names(df_test) <- c("country", "PFL", "FGA", "CHA", "NDA", "GDP")
+
+df_test$log_PFL   <- log(pmax(df_test$PFL, 1e-10))
+df_test$log1p_FGA <- log1p(df_test$FGA)
+df_test$log_GDP   <- log(pmax(df_test$GDP, 1e-10))
+
+eval_model <- function(model, train_data, test_data, vars_needed, model_name) {
+  train_sub <- train_data[, vars_needed, drop = FALSE]
+  train_sub <- train_sub[complete.cases(train_sub), , drop = FALSE]
+
+  test_sub <- test_data[, vars_needed, drop = FALSE]
+  test_sub <- test_sub[complete.cases(test_sub), , drop = FALSE]
+
+  test_sub$pred <- predict(model, newdata = test_sub)
+
+  sm <- summary(model)
+
+  data.frame(
+    model = model_name,
+    n_train = nrow(train_sub),
+    n_test = nrow(test_sub),
+    r_squared = sm$r.squared,
+    adj_r_squared = sm$adj.r.squared,
+    train_rmse = sqrt(mean(residuals(model)^2)),
+    test_rmse = sqrt(mean((test_sub$log_PFL - test_sub$pred)^2)),
+    model_p_value = pf(sm$fstatistic[1], sm$fstatistic[2], sm$fstatistic[3], lower.tail = FALSE)
+  )
+}
+
+results_table <- rbind(
+  eval_model(m1, df_2006, df_test,
+             c("log_PFL", "log1p_FGA"),
+             "Model 1: log_PFL ~ log1p_FGA"),
+
+  eval_model(m2, df_2006, df_test,
+             c("log_PFL", "log1p_FGA", "CHA", "NDA"),
+             "Model 2: log_PFL ~ log1p_FGA + CHA + NDA"),
+
+  eval_model(m3, df_2006, df_test,
+             c("log_PFL", "log1p_FGA", "CHA", "NDA", "log_GDP"),
+             "Model 3: log_PFL ~ log1p_FGA + CHA + NDA + log_GDP"),
+
+  eval_model(m4, df_2006, df_test,
+             c("log_PFL", "log1p_FGA", "log_GDP"),
+             "Model 4: log_PFL ~ log1p_FGA + log_GDP")
+)
+#commit marker
+results_table[order(results_table$test_rmse), ]
+```
+
+
