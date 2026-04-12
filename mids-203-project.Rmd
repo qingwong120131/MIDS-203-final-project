@@ -175,7 +175,6 @@ plot_histograms(vars_y, "Raw vs. Log10 y-variables")
 
 ```
 
-
 Now I look for collinearity between the variables:
 
 ```{r}
@@ -194,7 +193,7 @@ y <- get_cols(vars_y,2019)
 
 # Log-transformed all numeric variables
 df_log <- df[, c('iso','code','country',x,y)]
-df_log[, c(x, y)] <- log(df[, c(x, y)])
+df_log[, c(x, y)] <- log(df[, c(x, y)] + 1)
 
 # Scatterplot matrix of x
 x_log_clean <- na.omit(df_log[,c('iso','code','country',x)])
@@ -262,7 +261,13 @@ x_log_clean$PC2 <- pca_x$x[,2]
 df_log_pc <- merge(df_log, x_log_clean[, c('iso','code','country','PC1','PC2')], by = c('iso','code','country'))
 ```
 
+Next, we plot the individual output variables vs. PC1:
+
 ```{r}
+
+# modifying vars_y to only include FSS, FCL, PFL
+vars_y <- c("FSS","FCL","PFL")
+
 y <- get_cols(vars_y,2019)
 print(y)
 for (y_var in y) {
@@ -273,4 +278,99 @@ for (y_var in y) {
        pch = 19)
 }
 ```
+
+Next, fit linear models of output variables vs. PC1:
+
+``` {r}
+library(lmtest)
+
+for (y_var in y) {
+  
+  model <- lm(as.formula(paste(y_var, "~ PC1")), data = df_log_pc)
+  cat("\n", y_var, "\n")
+  cat("R²:", summary(model)$r.squared, "\n")
+  plot(model, which = 1, main = paste("Residuals vs Fitted:", y_var))
+  print(bptest(model))
+}
+```
+``` {r}
+for (y_var in y) {
+  model <- lm(as.formula(paste(y_var, "~ PC1 + I(PC1^2) + PC2")), data = df_log_pc)
+  cat("\n", y_var, "\n")
+  cat("R²:", summary(model)$r.squared, "\n")
+  plot(model, which = 1, main = paste("Residuals vs Fitted:", y_var))
+  print(bptest(model))
+}
+```
+----------- THINGS THAT DIDN'T WORK --------------------------------------------------------------------
+
+Let's see if the poor fit is because we're not grouping the countries very well. After all, landlocked countries won't have much result for fisheries, and coastal countries might have less active deforestation as it won't be a main industry.
+
+```{r}
+country_list <- df_log_pc$country
+
+landlocked <- c(
+  "Afghanistan", "Armenia", "Azerbaijan", "Bhutan", "Bolivia",
+  "Botswana", "Burkina Faso", "Burundi", "Central African Republic",
+  "Chad", "Czech Republic", "Ethiopia", "Hungary", "Kazakhstan",
+  "Kyrgyzstan", "Laos", "Lesotho", "Luxembourg", "Malawi",
+  "Mali", "Moldova", "Mongolia", "Nepal", "Niger",
+  "North Macedonia", "Paraguay", "Rwanda", "Serbia",
+  "Slovakia", "South Sudan", "Eswatini", "Switzerland",
+  "Tajikistan", "Turkmenistan", "Uganda", "Uzbekistan",
+  "Zambia", "Zimbabwe", "Austria", "Belarus"
+)
+
+coastal <- setdiff(country_list, landlocked)
+
+df_log_pc$type <- ifelse(
+  df_log_pc$country %in% landlocked, "landlocked",
+  ifelse(df_log_pc$country %in% coastal, "coastal", NA)
+)
+
+for (y_var in y) {
+  p <- ggplot(df_log_pc, aes(x = PC1, y = .data[[y_var]], color = type)) +
+    geom_point() +
+    facet_wrap(~ type) 
+    labs(
+      title = y_var,
+      x = "PC1",
+      y = y_var,
+      color = "Type"
+    ) +
+    theme_minimal()
+  print(p)
+}
+```
+Not seeming like there's much improvement to the model from separating out countries based on a crude categorization. It also doesn't seem like FSS contains any data from landlocked countries (probably why it's missing so many rows).
+
+What about continents?
+
+```{r}
+library(countrycode)
+
+df_log_pc$continent <- countrycode(
+  df_log_pc$iso,
+  origin = "iso3c",
+  destination = "continent"
+)
+
+# now plot faceted by continent
+
+for (y_var in y) {
+  p <- ggplot(df_log_pc, aes(x = PC1, y = .data[[y_var]])) +
+    geom_point() +
+    facet_wrap(~ continent) 
+    labs(
+      title = y_var,
+      x = "PC1",
+      y = y_var,
+      color = "Continent"
+    ) +
+    theme_minimal()
+  print(p)
+}
+```
+
+
 
