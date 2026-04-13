@@ -8,211 +8,109 @@ date: "2026-04-09"
 library(ggplot2)
 
 # Read CSV (adjust path as needed)
-df <- read.csv("merged_raw_all_years.csv")
+df <- read.csv("merged_raw_all_years.csv", na.strings = c("nan", "NaN"))
 dim(df)
 ```
 
-First task: examine the data for cleanliness issues
-
-- Realizing that a lot of the variables in the dataset are missing like 50% of the rows...so let's first rank all the possible Y variables (in 'ecosystem vitality on page 3') and X variables (in 'climate change on page 4') based on how many NA rows there are, then choose based on a tradeoff between relevance and # of missing rows.
-- I'm using 2019, which is the last year with fisheries data (see page 130/131)
-
 ```{r}
-ecosystem_vars <- c(
-  # Biodiversity & Habitat
-  "MKP", "MHP", "MPE", "PAR", "SPI", "TBN", "TKP", "PAE", "PHL", "RLI", "SHI", "BER",
-  
-  # Forests
-  "PFL", "IFL", "FCL", "TCG", "FLI",
-  
-  # Fisheries
-  "FSS", "FCD", "BTZ", "BTO", "RMS",
-  
-  # Air Pollution
-  "OEB", "OEC", "NXA", "SDA",
-  
-  # Agriculture
-  "SNM", "PSU", "PRS", "RCY",
-  
-  # Water Resources
-  "WWG", "WWC", "WWT", "WWR"
-)
-
-eco_col_matches <- colnames(df)[
-  grepl(paste(ecosystem_vars, collapse = "|"), colnames(df)) &
-    grepl("2019$", colnames(df))
-]
-
-df_ecosystem = df[, eco_col_matches]
-
-# sort each column in the ecosystem vitality (ECO) category by the number of NAs in the year 2019
-sort(colSums(is.na(df_ecosystem)))
-
-```
-Most relevant Y-variables would be:
-- PFL (primary forest loss) - 137 missing rows out of 220
-    - Alternative: FCL (74 missing rows)
-- FSS (fish stock status) - 102 missing rows out of 220
-    - Alternative: RLI/SHI - 2 and 43 missing rows
-
-Now to look at the x-variables:
-```{r}
-climate_indicators <- c(
-  # Indicators in Climate Change Mitigation
-  "CDA",  # Adjusted emissions growth rate for CO2
-  "CDF",  # CO2 growth rate (country-specific targets)
-  "CHA",  # Adjusted emissions growth rate for methane
-  "FGA",  # Adjusted emissions growth rate for F-gases
-  "NDA",  # Adjusted emissions growth rate for nitrous oxide
-  "BCA",  # Adjusted emissions growth rate for black carbon
-  "LUF",  # Net carbon fluxes due to land cover change
-  "GTI",  # GHG growth rate adjusted by emissions intensity
-  "GTP",  # GHG growth rate adjusted by per capita emissions
-  "GHN",  # Projected emissions in 2050
-  "CBP"   # Projected cumulative emissions to 2050 relative to carbon budget
-)
-
-climate_raw <- c(
-  # Raw variables for climate change
-  "CDO", # CO2 emissions [Gg], excluding land use and forestry
-  "CH4", # Methane emissions [Gg]
-  "FOG", # F-gasses emissions [Gg CO2-eq.]
-  "NOT", # N2O emissions [Gg]
-  "SO2", # SO2 emissions [Gg]
-  "BLC", # Black carbon emissions [Gg]
-  "LUE" #CO2 net fluxes (emissions and sinks) from land use and land cover change
-  )
-
-get_na <- function(df, vars, label, year = "2019") {
-  cols <- colnames(df)[
-  grepl(paste(vars, collapse = "|"), colnames(df)) &
-    grepl(paste0(year, "$"), colnames(df))
-  ]
-  df_subset = df[, cols]
-  cat(label, ":\n")
-  print(sort(colSums(is.na(df_subset))))
-  cat("\n")
-}
-
-get_na(df, climate_indicators, "Number of NA in climate indicator variables:")
-get_na(df, climate_raw, "Number of NA in climate raw variables:")
-
-# Also look at how much data is missing for GDP
-
-cat("Number of NA in raw GDP data:", sum(is.na(df[, "GDP.raw.2019"])), "\n")
-
-```
-Use these raw variables:
-- CDO (carbon dioxide emissions) - related to fossil fuel combustion, primary output of industrial energy use
-- SO2 - industrial (coal, combustion)
-- BLC - fossil fuel combustion (soot)
-- NOT (N2O emissions) - mostly comes from agriculture (fertilizer) but some from industrial/combustion
-- GDP
-
-Do not use:
-- FOG (F-gas emissions) - industrial, but missing a lot of data
-- CH4 (methane emissions) - less industry, more agriculture
-- LUE (land-use emissions) - more about land transformation, often for agriculture
-
-Let's now see what combinations of best X and best Y's have the most data
-
-```{r}
-
-vars_y <- c("PFL","FCL","FSS","RLI","SHI")
-vars_x <- c("CDO", "SO2","BLC", "NOT","GDP")
-
-get_clean_dim <- function(df, y_var, x_vars = vars_x, year = "2019") {
-  cols <- colnames(df)[
-    grepl(paste(c(y_var, x_vars), collapse = "|"), colnames(df)) &
-      grepl(paste0(year, "$"), colnames(df))
-  ]
-  print(cols)
-  
-  df_subset <- df[, c("code", "iso", "country", cols), drop = FALSE]
-  df_clean <- na.omit(df_subset)
-
-  return(dim(df_clean))
-}
-
-# Loop through y variables
-for (var in vars_y) {
-  dims <- get_clean_dim(df, var)
-  cat("Y =", var, ":", dims[1], "rows", "\n")
-}
-
-```
-- For forest: see if PFL and FCL correlate well; if so, use FCL
-- For biodiversity: see if FSS/RLI/SHI correlate well; if not, FSS still has a lot of data
-
-Next step is to run a PCA on the x-variables and y-variables to try to reduce the number of features:
-- X-variables: CDO/SO2/BLC/NOT/GDP
-- Y-variables: PFL/FCL/FSS/RLI/SHI
-
-First, it's time to plot the variables and see if they need some transformation first:
-
-```{r}
-
-plot_histograms <- function(vars,title) {
-  par(mfrow = c(length(vars), 2), mar = c(2, 2, 2, 1),oma = c(0, 0, 3, 0))
-
-  for (v in vars) {
-    var_name <- paste0(v, ".raw.2019")
-    x <- df[[var_name]]
-  
-    hist(x,
-         main = paste("Raw:", v),
-         xlab = var_name)
-  
-    hist(log10(x[x > 0]),
-         main = paste("Log10:", v),
-         xlab = paste0("log10(", var_name, ")"))
-  }
-  mtext(title, outer = TRUE, cex = 1.5, font = 2)
-}
-
-plot_histograms(vars_x, "Raw vs. Log10 x-variables")
-plot_histograms(vars_y, "Raw vs. Log10 y-variables")
-
+training_year <- 2006
 ```
 
-Now I look for collinearity between the variables:
-
+Defining a function to get columns from that year:
 ```{r}
-# Scatterplot matrix of x-variables and y-variables
-
-get_cols <- function(vars,year) {
+get_cols <- function(vars,df,year) {
   cols <- colnames(df)[
     grepl(paste(vars, collapse = "|"), colnames(df)) &
       grepl(paste0(year, "$"), colnames(df))
   ]
   return(cols)
 }
+```
 
-x <- get_cols(vars_x,2019)
-y <- get_cols(vars_y,2019)
+```{r}
+# create per capita columns for GDP and emissions
 
-# Log-transformed all numeric variables
-df_log <- df[, c('iso','code','country',x,y)]
-df_log[, c(x, y)] <- log(df[, c(x, y)] + 1)
+pop_name <- paste0("POP.raw.", training_year)
+vars_to_pc <- c("GDP", "CDO", "SO2", "BLC", "NOT")  
+
+for (v in vars_to_pc) {
+  raw_name <- paste0(v, ".raw.", training_year)
+  pc_name  <- paste0(v, "_PC.raw.", training_year)
+  df[[pc_name]] <- df[[raw_name]] / df[[pop_name]]
+  print(pc_name)
+}
+
+
+
+vars_y <- c("PFL","FCL","FSS","RLI","SHI")
+#vars_x <- c("CDO", "SO2","BLC", "NOT","GDP")
+
+vars_x <- c(
+  "CDO_PC", "SO2_PC", "BLC_PC", "NOT_PC","GDP_PC")
+
+c <- get_cols(vars_x,df,training_year)
+
+plot_histograms <- function(vars,df,title) {
+  par(mfrow = c(length(vars), 2), mar = c(2, 2, 2, 1),oma = c(0, 0, 3, 0))
+
+  for (v in vars) {
+    var_name <- paste0(v, ".raw.", training_year)
+    x <- df[[var_name]]
+  
+    hist(x,
+         main = paste("Raw:", v),
+         xlab = var_name)
+  
+    hist(log(pmax(x,1e-8)), #add a tiny constant
+         main = paste("Log:", v),
+         xlab = paste0("log(", var_name, ")"))
+  }
+  mtext(title, outer = TRUE, cex = 1.5, font = 2)
+}
+
+plot_histograms(vars_x, df, title = "Raw vs. Log x-variables")
+plot_histograms(vars_y, df, title = "Raw vs. Log y-variables")
+
+```
+Now I look for collinearity between the variables:
+
+```{r}
+# Scatterplot matrix of x-variables and y-variables
+
+# modifying vars_y to only include FSS, FCL, PFL
+vars_y <- c("FSS","FCL")
+
+x <- get_cols(vars_x,df,training_year)
+y <- get_cols(vars_y,df,training_year)
+
+for (col in c(x,y)) {
+  log_name <- paste0("log_",col)
+  df[[log_name]] <- log10(pmax(df[[col]], 1e-8))
+}
+
+x_log <- paste0("log_", x)
+y_log <- paste0("log_", y)
+
+summary(df[x_log])
 
 # Scatterplot matrix of x
-x_log_clean <- na.omit(df_log[,c('iso','code','country',x)])
-pairs(x_log_clean[x])
+x_log_clean <- na.omit(df[, c('iso','code','country', x_log)])
+pairs(x_log_clean[x_log])
 
 # Scatterplot matrix of y
-y_log_clean <- na.omit(df_log[,c('iso','code','country',y)])
-pairs(y_log_clean[y])
+y_log_clean <- na.omit(df[, c('iso','code','country', y_log)])
+pairs(y_log_clean[y_log])
 
 # x variables
-r2_x <- cor(x_log_clean[,x])^2
+r2_x <- cor(x_log_clean[, x_log])^2
 r2_x
 
 # y variables
-r2_y <- cor(y_log_clean[,y])^2
+r2_y <- cor(y_log_clean[, y_log])^2
 r2_y
 ```
 ```{r}
-pca_x <- prcomp(x_log_clean[,x], center = TRUE, scale. = TRUE)
+pca_x <- prcomp(x_log_clean[,x_log], center = TRUE, scale. = TRUE)
 
 var_explained <- pca_x$sdev^2
 prop_var_explained <- var_explained / sum(var_explained)
@@ -256,27 +154,29 @@ Conclusions from PCA are that we can reduce dimensionality (esp PC1).
 # add pc1 and pc2 to log x-variable df
 x_log_clean$PC1 <- pca_x$x[,1]
 x_log_clean$PC2 <- pca_x$x[,2]
+x_log_clean$PC3 <- pca_x$x[,3]
+x_log_clean$PC4 <- pca_x$x[,4]
+x_log_clean$PC5 <- pca_x$x[,5]
 
 # merge back into y-variable df
-df_log_pc <- merge(df_log, x_log_clean[, c('iso','code','country','PC1','PC2')], by = c('iso','code','country'))
+df_pc <- merge(df, x_log_clean[, c('iso','code','country','PC1','PC2','PC3','PC4','PC5')], by = c('iso','code','country'))
 ```
 
 Next, we plot the individual output variables vs. PC1:
 
 ```{r}
+par(mfrow = c(2, 2))
 
-# modifying vars_y to only include FSS, FCL, PFL
-vars_y <- c("FSS","FCL","PFL")
-
-y <- get_cols(vars_y,2019)
-print(y)
 for (y_var in y) {
-  plot(df_log_pc[[y_var]] ~ df_log_pc$PC1,
+  plot(df_pc[[y_var]] ~ df_pc$PC1,
        main = y_var,
        xlab = "PC1",
        ylab = y_var,
        pch = 19)
 }
+
+
+
 ```
 
 Next, fit linear models of output variables vs. PC1:
@@ -284,24 +184,232 @@ Next, fit linear models of output variables vs. PC1:
 ``` {r}
 library(lmtest)
 
+par(mfrow = c(2, 2))  # 1 row, 3 columns
+
+results <- data.frame()
+
 for (y_var in y) {
   
-  model <- lm(as.formula(paste(y_var, "~ PC1")), data = df_log_pc)
-  cat("\n", y_var, "\n")
-  cat("R²:", summary(model)$r.squared, "\n")
-  plot(model, which = 1, main = paste("Residuals vs Fitted:", y_var))
-  print(bptest(model))
-}
+  model <- lm(as.formula(paste(y_var, "~ PC1")), data = df_pc)
+  model_sum <- summary(model)
+  bp <- bptest(model)
+  fstat <- model_sum$fstatistic
+  results <- rbind(
+      results,
+      data.frame(
+        y_var = y_var,
+        adj_r2 = model_sum$adj.r.squared,
+        f_pvalue = pf(fstat["value"], fstat["numdf"], fstat["dendf"], lower.tail = FALSE),
+        bp_stat = unname(bp$statistic),
+        bp_pvalue = bp$p.value,
+        stringsAsFactors = FALSE
+      )
+    )
+  
+  }
+  
+  print(results)
+
 ```
+Variations on simplest model Y vs. PC1:
+
 ``` {r}
+par(mfrow = c(2, 2))  # 1 row, 3 columns
+
 for (y_var in y) {
-  model <- lm(as.formula(paste(y_var, "~ PC1 + I(PC1^2) + PC2")), data = df_log_pc)
+  
+  model <- lm(as.formula(paste(y_var, "~ PC1 + PC2 + PC3 + PC4 + PC5")), data = df_log_pc)
   cat("\n", y_var, "\n")
   cat("R²:", summary(model)$r.squared, "\n")
+  
+  # Print coefficient table (includes p-values)
+  print(summary(model))
+  
   plot(model, which = 1, main = paste("Residuals vs Fitted:", y_var))
   print(bptest(model))
+  
 }
 ```
+```{r}
+df_log_pc[c(123,91,141,152),'country']
+
+
+```
+
+Appendix - trying out literally everything via PCA
+
+```{r}
+# PCA function
+
+run_pca <- function(x, y, df, rhs = "~ PC1") {
+  library(lmtest)
+  # Keep needed columns only
+  df_log <- df[, c("iso", "code", "country", x, y)]
+  df_log[, c(x, y)] <- log(df[, c(x, y)] + 1)
+  
+  # Optional GDP filter if present
+  if ("gdp" %in% names(df_log)) {
+    cutoff <- quantile(df_log$gdp, 0.05, na.rm = TRUE)
+    df_log <- df_log[df_log$gdp > cutoff, ]
+  }
+  
+  # Remove rows with missing x values before PCA
+  x_log_clean <- na.omit(df_log[, c("iso", "code", "country", x)])
+  
+  # Run PCA
+  pca_x <- prcomp(x_log_clean[, x], center = TRUE, scale. = TRUE)
+  n_pcs <- min(5, ncol(pca_x$x))
+  pc_cols <- paste0("PC", seq_len(n_pcs))
+  
+  # Add PC scores to x_log_clean
+  x_log_clean[, pc_cols] <- pca_x$x[, seq_len(n_pcs), drop = FALSE]
+  
+  # Merge PCs back into full log dataframe
+  df_log_pc <- merge(
+    df_log,
+    x_log_clean[, c("iso", "code", "country", pc_cols)],
+    by = c("iso", "code", "country")
+  )
+  
+  #return(df_log_pc)
+  
+  # Fit models and make residual plots
+  resid_plots <- list()
+  models <- list()
+  stats_table <- data.frame()
+  
+  for (y_var in y) {
+    model <- lm(as.formula(paste(y_var, rhs)), data = df_log_pc)
+    models[[y_var]] <- model
+    
+    model_summary <- summary(model)
+    fstat <- model_summary$fstatistic
+    f_pval <- pf(fstat[1], fstat[2], fstat[3], lower.tail = FALSE)
+    bp <- bptest(model)
+    
+    cat("\n", y_var, "\n")
+    cat("R²:", model_summary$r.squared, "\n")
+    cat(
+      "F-statistic:",
+      round(fstat[1], 3),
+      "on", fstat[2], "and", fstat[3], "DF",
+      "p-value:", format(f_pval, scientific = TRUE, digits = 3), "\n"
+    )
+    print(bp)
+    
+    plot_df <- data.frame(
+      fitted = fitted(model),
+      residuals = resid(model)
+    )
+    
+    resid_plots[[y_var]] <- ggplot(plot_df, aes(x = fitted, y = residuals)) +
+      geom_point() +
+      geom_hline(yintercept = 0, linetype = "dashed") +
+      labs(
+        title = paste("Residuals vs Fitted:", y_var),
+        x = "Fitted values",
+        y = "Residuals"
+      ) +
+      theme_minimal()
+  }
+  
+  wrap_plots(resid_plots, ncol = 2)
+  
+}
+```
+
+```{r}
+
+eco_biodiversity <- c(
+  "MKP",  # Marine KBA Protection
+  "MHP",  # Marine Habitat Protection
+  "MPE",  # Marine Protection Stringency
+  "PAR",  # Protected Areas Representativeness Index
+  "SPI",  # Species Protection Index
+  "TBN",  # Terrestrial Biome Protection
+  "TKP",  # Terrestrial KBA Protection
+  "PAE",  # Protected Area Effectiveness
+  "PHL",  # Protected Human Land
+  "RLI",  # Red List Index
+  "SHI",  # Species Habitat Index
+  "BER"   # Bioclimatic Ecosystem Resilience
+)
+
+eco_forests <- c(
+  "PFL",  # Primary Forest Loss
+  #"IFL",  # Intact Forest Landscape Loss
+  "FCL",  # Tree cover loss weighted by permanency
+  "TCG",  # Net change in tree cover
+  "FLI"   # Forest Landscape Integrity
+)
+
+eco_fisheries <- c(
+  "FSS",  # Fish Stock Status
+  "FCD",  # Fish Catch Discarded
+  "BTZ",  # Bottom Trawling in EEZ
+  "BTO",  # Bottom Trawling in Global Ocean
+  "RMS"   # Regional Marine Trophic Index
+)
+
+eco_air_pollution <- c(
+  "OEB",  # Ozone exposure in KBAs
+  "OEC",  # Ozone exposure in croplands
+  "NXA",  # Adjusted NOx growth rate
+  "SDA"   # Adjusted SO2 growth rate
+)
+
+eco_agriculture <- c(
+  "SNM",  # Sustainable Nitrogen Management
+  "PSU",  # Phosphorus Surplus
+  "PRS",  # Pesticide Pollution Risk
+  "RCY"   # Relative Crop Yield
+)
+
+eco_water <- c(
+  "WWG",  # Wastewater generated
+  "WWC",  # Wastewater collected
+  "WWT",  # Wastewater treated
+  "WWR"   # Wastewater reused
+)
+
+eco_all <- c(
+  eco_biodiversity,
+  eco_forests,
+  eco_fisheries,
+  eco_air_pollution,
+  eco_agriculture,
+  eco_water
+)
+
+eco_minus_y <- c(setdiff(eco_all, vars_y))
+
+env_health_air <- c(
+  "HPE",  # Anthropogenic PM2.5 exposure
+  "HFD",  # Household solid fuels
+  "OZD",  # Ozone exposure
+  "NOD",  # NOx exposure
+  "SOE",  # SO2 exposure
+  "COE",  # CO exposure
+  "VOE"   # VOC exposure
+)
+```
+
+```{r}
+vars_x_2 <- c(climate_raw)
+vars_y_2 <- c("PFL","FCL","FSS")
+
+x <- get_cols(vars_x_2, df, training_year)
+y <- get_cols(vars_y_2, df, training_year)
+
+run_pca(x,y,df,rhs = "~ PC1")
+run_pca(x,y,df,rhs = "~ PC1 + PC2 + PC3")
+```
+
+```{r}
+summary(df[, get_cols(eco_minus_y, df, training_year)
+])
+```
+
 ----------- THINGS THAT DIDN'T WORK --------------------------------------------------------------------
 
 Let's see if the poor fit is because we're not grouping the countries very well. After all, landlocked countries won't have much result for fisheries, and coastal countries might have less active deforestation as it won't be a main industry.
@@ -371,6 +479,117 @@ for (y_var in y) {
   print(p)
 }
 ```
+Maturity
 
+```{r}
+df$POP.raw.1960
+```
 
+----- ARCHIVED: DATA EXPLORATION -------------------------
+
+- Realizing that a lot of the variables in the dataset are missing like 50% of the rows...so let's first rank all the possible Y variables (in 'ecosystem vitality on page 3') and X variables (in 'climate change on page 4') based on how many NA rows there are, then choose based on a tradeoff between relevance and # of missing rows.
+
+```{r}
+ecosystem_vars <- c(
+  # Biodiversity & Habitat
+  "MKP", "MHP", "MPE", "PAR", "SPI", "TBN", "TKP", "PAE", "PHL", "RLI", "SHI", "BER",
+  
+  # Forests
+  "PFL", "IFL", "FCL", "TCG", "FLI",
+  
+  # Fisheries
+  "FSS", "FCD", "BTZ", "BTO", "RMS",
+  
+  # Air Pollution
+  "OEB", "OEC", "NXA", "SDA",
+  
+  # Agriculture
+  "SNM", "PSU", "PRS", "RCY",
+  
+  # Water Resources
+  "WWG", "WWC", "WWT", "WWR"
+)
+
+eco_col_matches <- colnames(df)[
+  grepl(paste(ecosystem_vars, collapse = "|"), colnames(df)) &
+    grepl(paste0(training_year,"$"), colnames(df))
+]
+
+df_ecosystem = df[, eco_col_matches]
+
+# sort each column in the ecosystem vitality (ECO) category by the number of NAs in the year 2019
+sort(colSums(is.na(df_ecosystem)))
+
+```
+Most relevant Y-variables would be:
+- PFL (primary forest loss) - 137 missing rows out of 220
+    - Alternative: FCL (74 missing rows)
+- FSS (fish stock status) - 102 missing rows out of 220
+    - Alternative: RLI/SHI - 2 and 43 missing rows
+
+Now to look at the x-variables:
+```{r}
+climate_indicators <- c(
+  # Indicators in Climate Change Mitigation
+  "CDA",  # Adjusted emissions growth rate for CO2
+  "CDF",  # CO2 growth rate (country-specific targets)
+  "CHA",  # Adjusted emissions growth rate for methane
+  #"FGA",  # Adjusted emissions growth rate for F-gases
+  "NDA",  # Adjusted emissions growth rate for nitrous oxide
+  "BCA",  # Adjusted emissions growth rate for black carbon
+  "LUF",  # Net carbon fluxes due to land cover change
+  "GTI",  # GHG growth rate adjusted by emissions intensity
+  "GTP",  # GHG growth rate adjusted by per capita emissions
+  "GHN",  # Projected emissions in 2050
+  "CBP"   # Projected cumulative emissions to 2050 relative to carbon budget
+)
+
+climate_raw <- c(
+  # Raw variables for climate change
+  "CDO", # CO2 emissions [Gg], excluding land use and forestry
+  "CH4", # Methane emissions [Gg]
+  "FOG", # F-gasses emissions [Gg CO2-eq.]
+  "NOT", # N2O emissions [Gg]
+  "SO2", # SO2 emissions [Gg]
+  "BLC", # Black carbon emissions [Gg]
+  "LUE", # CO2 net fluxes (emissions and sinks) from land use and land cover change
+  "GDP"
+  )
+
+get_na <- function(df, vars, label, year = training_year) {
+  cols <- colnames(df)[
+  grepl(paste(vars, collapse = "|"), colnames(df)) &
+    grepl(paste0(year, "$"), colnames(df))
+  ]
+  df_subset = df[, cols]
+  cat(label, ":\n")
+  print(sort(colSums(is.na(df_subset))))
+  cat("\n")
+}
+
+get_na(df, climate_indicators, "Number of NA in climate indicator variables:")
+get_na(df, climate_raw, "Number of NA in climate raw variables:")
+```
+Use these raw variables:
+- CDO (carbon dioxide emissions) - related to fossil fuel combustion, primary output of industrial energy use
+- SO2 - industrial (coal, combustion)
+- BLC - fossil fuel combustion (soot)
+- NOT (N2O emissions) - mostly comes from agriculture (fertilizer) but some from industrial/combustion
+- GDP
+
+These can all be converted to per capita by dividing by POP (population)
+
+Do not use:
+- FOG (F-gas emissions) - industrial, but missing a lot of data
+- CH4 (methane emissions) - less industry, more agriculture
+- LUE (land-use emissions) - more about land transformation, often for agriculture
+
+Next step is to run a PCA on the x-variables and y-variables to try to reduce the number of features:
+- X-variables: CDO/SO2/BLC/NOT/GDP
+- Y-variables: PFL/FCL/FSS/RLI/SHI
+
+First, it's time to plot the variables and see if they need some transformation first:
+```{r}
+summary(df$FSS.raw.2012)
+```
 
