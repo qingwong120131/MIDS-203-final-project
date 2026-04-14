@@ -547,7 +547,7 @@ pairs(cor_vars)
 
 ## Models
 
-### Model 1: Simplest credible model
+### Model 1: Simplest credible model (CDO + POP)
 
 ```{r model1}
 
@@ -555,15 +555,14 @@ m1 <- lm(log_FCL ~ log_CDO + log_POP, data = df_train)
 summary(m1)
 ```
 
-### Model 2: EKC interaction (CDO * GDP)
+### Model 2: CDO + GDP + POP
 
 ```{r model2}
 m2 <- lm(log_FCL ~ log_CDO * log_GDP + log_POP, data = df_train)
 summary(m2)
 ```
-# QW MODELING START -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-### Model 2b: EKC interaction (using some kind of maturity variable)
+### Model 2b: using HPE instead of GDP
 
 ### Potentially HPE (human pollution exposure) can be an indicator of 'first-world' country behavior
 
@@ -576,6 +575,8 @@ plot(m2b)
 print(round(vif(m2b), 3))
 print(bptest(m2b))
 ```
+
+### Added SO2 but this is very correlated to CDO, probably not ideal
 
 ```{r}
 
