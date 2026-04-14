@@ -420,8 +420,9 @@ par(mfrow = c(1, 1))
 
 ```{r eda-correlation}
 cor_vars <- df_train[, c("log_CDO", "log_SO2", "log_GDP",
-                          "log_POP", "HPE", "log_SNM", "log_FCL")]
+                          "log_POP", "HPE", "SNM", "log_FCL")]
 round(cor(cor_vars, use = "complete.obs"), 3)
+pairs(cor_vars)
 ```
 
 ---
