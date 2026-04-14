@@ -558,7 +558,7 @@ summary(m1)
 ### Model 2: CDO + GDP + POP
 
 ```{r model2}
-m2 <- lm(log_FCL ~ log_CDO * log_GDP + log_POP, data = df_train)
+m2 <- lm(log_FCL ~ log_CDO + log_GDP + log_POP, data = df_train)
 summary(m2)
 ```
 
