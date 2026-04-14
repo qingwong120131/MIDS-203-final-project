@@ -334,6 +334,7 @@ for (i in 1:7) {
     )
   }
 }
+
 ```
 
 ---
@@ -362,7 +363,10 @@ build_year_df <- function(data, year) {
     SO2_pc  = data[[paste0("SO2.raw.", year)]] / data[[paste0("POP.raw.", year)]],
     CH4_pc  = data[[paste0("CH4.raw.", year)]] / data[[paste0("POP.raw.", year)]],
     FCL_raw = data[[paste0("FCL.raw.", year)]],
-    GDP_pc  = data[[paste0("GPC.raw.", year)]]
+    GDP_pc  = data[[paste0("GPC.raw.", year)]],
+    HPE     = data[[paste0("HPE.raw.", year)]] # proxy for industry maturity
+    #NOD     = data[[paste0("NOD.raw.", year)]] # proxy for industry maturity
+    #SOE     = data[[paste0("SOE.raw.", year)]] # proxy for industry maturity
   )
   out$log_CDO <- log(pmax(out$CDO, 1e-10))
   out$log_NOX <- log(pmax(out$NOX, 1e-10))
@@ -371,6 +375,7 @@ build_year_df <- function(data, year) {
   out$log_FCL <- log(pmax(out$FCL, 1e-10))
   out$log_GDP <- log(pmax(out$GDP, 1e-10))
   out$log_POP <- log(pmax(out$POP, 1e-10))
+  out$log_HPE <- log(pmax(out$HPE, 1e-10)) # proxy for industry maturity
   out$year    <- year
   na.omit(out)
 }
@@ -431,7 +436,7 @@ plot_raw_log_hist(df_train, "CDO")
 plot_raw_log_hist(df_train, "POP")
 plot_raw_log_hist(df_train, "GDP")
 plot_raw_log_hist(df_train, "SO2")
-
+plot_raw_log_hist(df_train, "HPE")
 
 
 ```
@@ -533,7 +538,7 @@ par(mfrow = c(1, 1))
 ### Correlation Matrix (Training Set)
 
 ```{r eda-correlation}
-cor_vars <- df_train[, c("log_CDO", "log_SO2", "log_GDP", "log_POP", "log_FCL")]
+cor_vars <- df_train[, c("log_CDO", "log_SO2", "log_GDP", "log_POP", "log_FCL", "HPE")]
 round(cor(cor_vars, use = "complete.obs"), 3)
 pairs(cor_vars)
 ```
@@ -555,6 +560,17 @@ summary(m1)
 ```{r model2}
 m2 <- lm(log_FCL ~ log_CDO * log_GDP, data = df_train)
 summary(m2)
+```
+
+
+### Model 2b: EKC interaction (using some kind of maturity variable)
+
+### Potentially HPE (human pollution exposure) can be an indicator of 'first-world' country behavior
+
+```{r model2}
+
+m2b <- lm(log_FCL ~ log_CDO + log_POP + HPE, data = df_train)
+summary(m2b)
 ```
 
 ### Model 3a: CDO * GDP + SO2 as additional control
