@@ -222,6 +222,12 @@ r_fcl_pfl <- round(cor(df[["FCL.raw.2018"]], df[["PFL.raw.2018"]],
 
 temp <- data.frame(
   POP     = df[["POP.raw.2018"]],
+  CDO = df[["CDO.raw.2018"]],
+  NOX = df[["NOX.raw.2018"]],
+  SO2 = df[["SO2.raw.2018"]],
+  CH4 = df[["CH4.raw.2018"]],
+  FCL = df[["FCL.raw.2018"]],
+  GDP = df[["GDP.raw.2018"]],
   CDO_pc  = df[["CDO.raw.2018"]] / df[["POP.raw.2018"]],
   NOX_pc  = df[["NOX.raw.2018"]] / df[["POP.raw.2018"]],
   SO2_pc  = df[["SO2.raw.2018"]] / df[["POP.raw.2018"]],
@@ -229,12 +235,13 @@ temp <- data.frame(
   FCL_raw = df[["FCL.raw.2018"]],
   GDP_pc  = df[["GPC.raw.2018"]]
 )
-temp$log_CDO <- log(pmax(temp$CDO_pc,  1e-10))
-temp$log_NOX <- log(pmax(temp$NOX_pc,  1e-10))
-temp$log_SO2 <- log(pmax(temp$SO2_pc,  1e-10))
-temp$log_CH4 <- log(pmax(temp$CH4_pc,  1e-10))
-temp$log_FCL <- log(pmax(temp$FCL_raw, 1e-10))
-temp$log_GDP <- log(pmax(temp$GDP_pc,  1e-10))
+temp$log_CDO <- log(pmax(temp$CDO,  1e-10))
+temp$log_NOX <- log(pmax(temp$NOX,  1e-10))
+temp$log_SO2 <- log(pmax(temp$SO2,  1e-10))
+temp$log_CH4 <- log(pmax(temp$CH4,  1e-10))
+temp$log_FCL <- log(pmax(temp$FCL, 1e-10))
+temp$log_GDP <- log(pmax(temp$GDP,  1e-10))
+temp$log_POP <- log(pmax(temp$POP,  1e-10))
 temp <- na.omit(temp)
 
 r_cdo_fcl <- round(cor(temp$log_CDO, temp$log_FCL), 3)
@@ -294,27 +301,40 @@ you know a country's CO2 output, you already know a great deal about its
 other emissions and wealth.
 
 ```{r correlation-heatmap, fig.height=5, fig.width=6}
-cor_matrix <- cor(temp[, c("log_CDO", "log_NOX", "log_SO2",
-                            "log_CH4", "log_GDP", "log_FCL")],
-                  use = "complete.obs")
-rownames(cor_matrix) <- c("CO2", "NOX", "SO2", "CH4", "GDP", "FCL")
-colnames(cor_matrix) <- c("CO2", "NOX", "SO2", "CH4", "GDP", "FCL")
+vars <- c("log_CDO", "log_NOX", "log_SO2",
+          "log_CH4", "log_GDP", "log_FCL", "log_POP")
+
+cor_matrix <- cor(temp[, vars], use = "complete.obs")
+
+rownames(cor_matrix) <- c("CO2", "NOX", "SO2", "CH4", "GDP", "FCL", "POP")
+colnames(cor_matrix) <- c("CO2", "NOX", "SO2", "CH4", "GDP", "FCL", "POP")
 
 col_palette <- colorRampPalette(c("steelblue", "white", "coral"))(99)
 
-image(1:6, 1:6, t(cor_matrix[6:1, ]),
-      col = col_palette, axes = FALSE,
-      xlab = "", ylab = "",
-      main = "Correlation Matrix — Industrial Activity Variables (2018)")
-axis(1, at = 1:6, labels = colnames(cor_matrix), las = 2)
-axis(2, at = 1:6, labels = rev(rownames(cor_matrix)), las = 1)
+image(
+  1:7, 1:7, t(cor_matrix[7:1, ]),
+  col = col_palette,
+  axes = FALSE,
+  xlab = "",
+  ylab = "",
+  main = "Correlation Matrix — Industrial Activity Variables (2018)"
+)
 
-for (i in 1:6) {
-  for (j in 1:6) {
-    text(j, 7 - i, round(cor_matrix[i, j], 2), cex = 0.85, font = 2,
-         col = ifelse(abs(cor_matrix[i, j]) > 0.6, "white", "black"))
+axis(1, at = 1:7, labels = colnames(cor_matrix), las = 2)
+axis(2, at = 1:7, labels = rev(rownames(cor_matrix)), las = 1)
+
+for (i in 1:7) {
+  for (j in 1:7) {
+    text(
+      j, 8 - i,
+      round(cor_matrix[i, j], 2),
+      cex = 0.85,
+      font = 2,
+      col = ifelse(abs(cor_matrix[i, j]) > 0.6, "white", "black")
+    )
   }
 }
+
 ```
 
 ---
@@ -332,17 +352,30 @@ build_year_df <- function(data, year) {
     country = data$country,
     iso     = data$iso,
     POP     = data[[paste0("POP.raw.", year)]],
-    CDO_raw = data[[paste0("CDO.raw.", year)]],
-    SO2_raw = data[[paste0("SO2.raw.", year)]],
+    CDO     = data[[paste0("CDO.raw.", year)]],
+    NOX     = data[[paste0("NOX.raw.", year)]],
+    SO2     = data[[paste0("SO2.raw.", year)]],
+    CH4     = data[[paste0("CH4.raw.", year)]],
+    FCL     = data[[paste0("FCL.raw.", year)]],
+    GDP     = data[[paste0("GDP.raw.", year)]],
+    CDO_pc  = data[[paste0("CDO.raw.", year)]] / data[[paste0("POP.raw.", year)]],
+    NOX_pc  = data[[paste0("NOX.raw.", year)]] / data[[paste0("POP.raw.", year)]],
+    SO2_pc  = data[[paste0("SO2.raw.", year)]] / data[[paste0("POP.raw.", year)]],
+    CH4_pc  = data[[paste0("CH4.raw.", year)]] / data[[paste0("POP.raw.", year)]],
     FCL_raw = data[[paste0("FCL.raw.", year)]],
-    GDP_pc  = data[[paste0("GPC.raw.", year)]]
+    GDP_pc  = data[[paste0("GPC.raw.", year)]],
+    HPE     = data[[paste0("HPE.raw.", year)]] # proxy for industry maturity
+    #NOD     = data[[paste0("NOD.raw.", year)]] # proxy for industry maturity
+    #SOE     = data[[paste0("SOE.raw.", year)]] # proxy for industry maturity
   )
-  out$CDO_pc  <- out$CDO_raw / out$POP
-  out$SO2_pc  <- out$SO2_raw / out$POP
-  out$log_CDO <- log(pmax(out$CDO_pc,  1e-10))
-  out$log_SO2 <- log(pmax(out$SO2_pc,  1e-10))
-  out$log_FCL <- log(pmax(out$FCL_raw, 1e-10))
-  out$log_GDP <- log(pmax(out$GDP_pc,  1e-10))
+  out$log_CDO <- log(pmax(out$CDO, 1e-10))
+  out$log_NOX <- log(pmax(out$NOX, 1e-10))
+  out$log_SO2 <- log(pmax(out$SO2, 1e-10))
+  out$log_CH4 <- log(pmax(out$CH4, 1e-10))
+  out$log_FCL <- log(pmax(out$FCL, 1e-10))
+  out$log_GDP <- log(pmax(out$GDP, 1e-10))
+  out$log_POP <- log(pmax(out$POP, 1e-10))
+  out$log_HPE <- log(pmax(out$HPE, 1e-10)) # proxy for industry maturity
   out$year    <- year
   na.omit(out)
 }
@@ -359,6 +392,55 @@ cat("Test set    (2022):", nrow(df_test),  "countries\n")
 ## Exploratory Data Analysis
 
 ### Distributions: Raw vs Log
+
+```{r}
+
+# Turned histogram plotting into a function - are you guys OK with this? If not that's fine.
+
+plot_raw_log_hist <- function(df, var, bins = 25, col = "mediumpurple") {
+  
+  raw_vals <- df[[var]]
+  log_vals <- log(pmax(raw_vals, 1e-10))
+  
+  par(mfrow = c(1, 2))
+  
+  # Raw
+  hist(raw_vals,
+       breaks = bins,
+       col = col,
+       border = NA,
+       main = paste0(var, " — Raw | mean = ",
+                     round(mean(raw_vals, na.rm = TRUE), 2)),
+       xlab = var)
+  
+  abline(v = mean(raw_vals, na.rm = TRUE),
+         col = "red", lwd = 2, lty = 2)
+  
+  # Log
+  hist(log_vals,
+       breaks = bins,
+       col = col,
+       border = NA,
+       main = paste0(var, " — Log | mean = ",
+                     round(mean(log_vals, na.rm = TRUE), 2)),
+       xlab = paste0("log(", var, ")"))
+  
+  abline(v = mean(log_vals, na.rm = TRUE),
+         col = "red", lwd = 2, lty = 2)
+  
+  par(mfrow = c(1, 1))
+}
+
+plot_raw_log_hist(df_train, "FCL_raw")
+plot_raw_log_hist(df_train, "CDO")
+plot_raw_log_hist(df_train, "POP")
+plot_raw_log_hist(df_train, "GDP")
+plot_raw_log_hist(df_train, "SO2")
+plot_raw_log_hist(df_train, "HPE")
+
+
+```
+
 
 ```{r eda-distributions-fcl, fig.height=3.5, fig.width=9}
 par(mfrow = c(1, 2))
@@ -379,9 +461,9 @@ par(mfrow = c(1, 1))
 ```{r eda-distributions-cdo, fig.height=3.5, fig.width=9}
 par(mfrow = c(1, 2))
 
-hist(df_train$CDO_pc, breaks = 25, col = "steelblue", border = NA,
-     main = "CO2 per Capita — Raw", xlab = "CO2 per capita (Gg/person)")
-abline(v = mean(df_train$CDO_pc), col = "red", lwd = 2, lty = 2)
+hist(df_train$CDO, breaks = 25, col = "steelblue", border = NA,
+     main = "CO2 — Raw", xlab = "CO2 (Gg)")
+abline(v = mean(df_train$CDO), col = "red", lwd = 2, lty = 2)
 
 hist(df_train$log_CDO, breaks = 25, col = "steelblue", border = NA,
      main = paste0("CO2 per Capita — Log  |  mean = ",
@@ -456,8 +538,9 @@ par(mfrow = c(1, 1))
 ### Correlation Matrix (Training Set)
 
 ```{r eda-correlation}
-cor_vars <- df_train[, c("log_CDO", "log_SO2", "log_GDP", "log_FCL")]
+cor_vars <- df_train[, c("log_CDO", "log_SO2", "log_GDP", "log_POP", "log_FCL", "HPE")]
 round(cor(cor_vars, use = "complete.obs"), 3)
+pairs(cor_vars)
 ```
 
 ---
@@ -467,7 +550,8 @@ round(cor(cor_vars, use = "complete.obs"), 3)
 ### Model 1: Simplest credible model
 
 ```{r model1}
-m1 <- lm(log_FCL ~ log_CDO, data = df_train)
+
+m1 <- lm(log_FCL ~ log_CDO + log_POP, data = df_train)
 summary(m1)
 ```
 
@@ -476,6 +560,17 @@ summary(m1)
 ```{r model2}
 m2 <- lm(log_FCL ~ log_CDO * log_GDP, data = df_train)
 summary(m2)
+```
+
+
+### Model 2b: EKC interaction (using some kind of maturity variable)
+
+### Potentially HPE (human pollution exposure) can be an indicator of 'first-world' country behavior
+
+```{r model2}
+
+m2b <- lm(log_FCL ~ log_CDO + log_POP + HPE, data = df_train)
+summary(m2b)
 ```
 
 ### Model 3a: CDO * GDP + SO2 as additional control
