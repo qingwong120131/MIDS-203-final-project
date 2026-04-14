@@ -558,7 +558,7 @@ summary(m1)
 ### Model 2: EKC interaction (CDO * GDP)
 
 ```{r model2}
-m2 <- lm(log_FCL ~ log_CDO * log_GDP, data = df_train)
+m2 <- lm(log_FCL ~ log_CDO * log_GDP + log_POP, data = df_train)
 summary(m2)
 ```
 # QW MODELING START -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -571,12 +571,11 @@ summary(m2)
 
 m2b <- lm(log_FCL ~ log_CDO + log_POP + HPE, data = df_train)
 summary(m2b)
+
 plot(m2b)
 print(round(vif(m2b), 3))
 print(bptest(m2b))
 ```
-
-### Add on SO2
 
 ```{r}
 
@@ -637,7 +636,7 @@ print(bptest(m2))
 ## Out-of-Sample Test (2022)
 
 ```{r out-of-sample, fig.height=4, fig.width=6}
-df_test$predicted <- predict(m2c, newdata = df_test)
+df_test$predicted <- predict(m2b, newdata = df_test)
 
 rmse_train <- round(sqrt(mean(residuals(m2)^2)), 4)
 rmse_test  <- round(sqrt(mean((df_test$log_FCL - df_test$predicted)^2,
