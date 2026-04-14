@@ -215,25 +215,25 @@ pair_results[order(-pair_results$best_n_complete), ]
 
 ```{r variable-selection-stats}
 # Compute all stats used in the variable selection narrative below
-n_fcl     <- sum(!is.na(df[["FCL.raw.2018"]]))
-n_pfl     <- sum(!is.na(df[["PFL.raw.2018"]]))
-r_fcl_pfl <- round(cor(df[["FCL.raw.2018"]], df[["PFL.raw.2018"]],
+n_fcl     <- sum(!is.na(df[["FCL.raw.2012"]]))
+n_pfl     <- sum(!is.na(df[["PFL.raw.2012"]]))
+r_fcl_pfl <- round(cor(df[["FCL.raw.2012"]], df[["PFL.raw.2012"]],
                         use = "complete.obs"), 3)
 
 temp <- data.frame(
-  POP     = df[["POP.raw.2018"]],
-  CDO = df[["CDO.raw.2018"]],
-  NOX = df[["NOX.raw.2018"]],
-  SO2 = df[["SO2.raw.2018"]],
-  CH4 = df[["CH4.raw.2018"]],
-  FCL = df[["FCL.raw.2018"]],
-  GDP = df[["GDP.raw.2018"]],
-  CDO_pc  = df[["CDO.raw.2018"]] / df[["POP.raw.2018"]],
-  NOX_pc  = df[["NOX.raw.2018"]] / df[["POP.raw.2018"]],
-  SO2_pc  = df[["SO2.raw.2018"]] / df[["POP.raw.2018"]],
-  CH4_pc  = df[["CH4.raw.2018"]] / df[["POP.raw.2018"]],
-  FCL_raw = df[["FCL.raw.2018"]],
-  GDP_pc  = df[["GPC.raw.2018"]]
+  POP     = df[["POP.raw.2012"]],
+  CDO = df[["CDO.raw.2012"]],
+  NOX = df[["NOX.raw.2012"]],
+  SO2 = df[["SO2.raw.2012"]],
+  CH4 = df[["CH4.raw.2012"]],
+  FCL = df[["FCL.raw.2012"]],
+  GDP = df[["GDP.raw.2012"]],
+  CDO_pc  = df[["CDO.raw.2012"]] / df[["POP.raw.2012"]],
+  NOX_pc  = df[["NOX.raw.2012"]] / df[["POP.raw.2012"]],
+  SO2_pc  = df[["SO2.raw.2012"]] / df[["POP.raw.2012"]],
+  CH4_pc  = df[["CH4.raw.2012"]] / df[["POP.raw.2012"]],
+  FCL_raw = df[["FCL.raw.2012"]],
+  GDP_pc  = df[["GPC.raw.2012"]]
 )
 temp$log_CDO <- log(pmax(temp$CDO,  1e-10))
 temp$log_NOX <- log(pmax(temp$NOX,  1e-10))
@@ -252,8 +252,8 @@ r_cdo_so2 <- round(cor(temp$log_CDO, temp$log_SO2), 3)
 r_cdo_ch4 <- round(cor(temp$log_CDO, temp$log_CH4), 3)
 r_cdo_nox <- round(cor(temp$log_CDO, temp$log_NOX), 3)
 
-cat("FCL complete cases (2018):", n_fcl, "\n")
-cat("PFL complete cases (2018):", n_pfl, "\n")
+cat("FCL complete cases (2012):", n_fcl, "\n")
+cat("PFL complete cases (2012):", n_pfl, "\n")
 cat("r(FCL, PFL):", r_fcl_pfl, "\n")
 cat("r(log_CDO, log_FCL):", r_cdo_fcl, "\n")
 cat("r(log_SO2, log_FCL):", r_so2_fcl, "\n")
@@ -302,12 +302,12 @@ other emissions and wealth.
 
 ```{r correlation-heatmap, fig.height=5, fig.width=6}
 vars <- c("log_CDO", "log_NOX", "log_SO2",
-          "log_CH4", "log_GDP", "log_FCL", "log_POP")
+          "log_CH4", "log_GDP", "log_POP", "log_FCL")
 
 cor_matrix <- cor(temp[, vars], use = "complete.obs")
 
-rownames(cor_matrix) <- c("CO2", "NOX", "SO2", "CH4", "GDP", "FCL", "POP")
-colnames(cor_matrix) <- c("CO2", "NOX", "SO2", "CH4", "GDP", "FCL", "POP")
+rownames(cor_matrix) <- c("CDO", "NOX", "SO2", "CH4", "GDP", "POP", "FCL")
+colnames(cor_matrix) <- c("CDO", "NOX", "SO2", "CH4", "GDP", "POP", "FCL")
 
 col_palette <- colorRampPalette(c("steelblue", "white", "coral"))(99)
 
@@ -317,7 +317,7 @@ image(
   axes = FALSE,
   xlab = "",
   ylab = "",
-  main = "Correlation Matrix — Industrial Activity Variables (2018)"
+  main = "Correlation Matrix — Industrial Activity Variables (2012)"
 )
 
 axis(1, at = 1:7, labels = colnames(cor_matrix), las = 2)
@@ -538,7 +538,7 @@ par(mfrow = c(1, 1))
 ### Correlation Matrix (Training Set)
 
 ```{r eda-correlation}
-cor_vars <- df_train[, c("log_CDO", "log_SO2", "log_GDP", "log_POP", "log_FCL", "HPE")]
+cor_vars <- df_train[, c("log_CDO", "log_SO2", "log_GDP", "log_POP", "HPE", "log_FCL")]
 round(cor(cor_vars, use = "complete.obs"), 3)
 pairs(cor_vars)
 ```
