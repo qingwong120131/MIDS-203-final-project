@@ -515,6 +515,8 @@ landlocked <- c(
   "Zambia", "Zimbabwe", "Austria", "Belarus"
 )
 
+library(tidyr)
+
 coastal <- setdiff(country_list, landlocked)
 
 df_train$type <- ifelse(
