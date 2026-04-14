@@ -561,7 +561,7 @@ summary(m1)
 m2 <- lm(log_FCL ~ log_CDO * log_GDP, data = df_train)
 summary(m2)
 ```
-
+# QW MODELING START -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 ### Model 2b: EKC interaction (using some kind of maturity variable)
 
@@ -571,13 +571,21 @@ summary(m2)
 
 m2b <- lm(log_FCL ~ log_CDO + log_POP + HPE, data = df_train)
 summary(m2b)
+plot(m2b)
+print(round(vif(m2b), 3))
+print(bptest(m2b))
 ```
 
-### Model 3a: CDO * GDP + SO2 as additional control
+### Add on SO2
 
-```{r model3a}
-m3a <- lm(log_FCL ~ log_CDO * log_GDP + log_SO2, data = df_train)
-summary(m3a)
+```{r}
+
+m2c <- lm(log_FCL ~ log_CDO + log_POP + log_SO2 + HPE, data = df_train)
+summary(m2c)
+print(round(vif(m2b), 3))
+print(bptest(m2b))
+plot(m2c)
+
 ```
 
 ### Model 3b: SO2 as primary X (replaces CDO)
@@ -629,7 +637,7 @@ print(bptest(m2))
 ## Out-of-Sample Test (2022)
 
 ```{r out-of-sample, fig.height=4, fig.width=6}
-df_test$predicted <- predict(m2, newdata = df_test)
+df_test$predicted <- predict(m2c, newdata = df_test)
 
 rmse_train <- round(sqrt(mean(residuals(m2)^2)), 4)
 rmse_test  <- round(sqrt(mean((df_test$log_FCL - df_test$predicted)^2,
