@@ -1,17 +1,24 @@
 ---
-  title: "mids-203-project"
+title: "mids-203-project"
 output: html_document
 date: "2026-04-09"
 ---
-  ```{r cars}
+
+```{r cars}
 # Load libraries
 library(ggplot2)
+library(car)
+library(lmtest)
 
 # Read CSV (adjust path as needed)
 df <- read.csv("merged_raw_all_years.csv")
 dim(df)
 ```
 
+Added column names bc i got a little confused -Malachi
+```{r}
+colnames(df)[grepl("PFL|FSS|CDA|CHA|FGA|NDA", colnames(df))]
+```
 First task: examine the data for cleanliness issues
 
 - Realizing that a lot of the variables in the dataset are missing like 50% of the rows...so let's first rank all the possible Y variables (in 'ecosystem vitality on page 3') and X variables (in 'climate change on page 4') based on how many NA rows there are, then choose based on a tradeoff between relevance and # of missing rows.
@@ -58,7 +65,7 @@ Most relevant Y-variables would be:
 
 Now to look at the x-variables:
   
-  ```{r}
+```{r}
 climate_vars <- c(
   # Climate Change Mitigation
   "CDA",  # Adjusted emissions growth rate for CO2
@@ -71,7 +78,7 @@ climate_vars <- c(
   "GTI",  # GHG growth rate adjusted by emissions intensity
   "GTP",  # GHG growth rate adjusted by per capita emissions
   "GHN",  # Projected emissions in 2050
-  "CBP",   # Projected cumulative emissions to 2050 relative to carbon budget,
+  "CBP"   # Projected cumulative emissions to 2050 relative to carbon budget,
 )
 
 climate_col_matches <- colnames(df)[
@@ -121,3 +128,535 @@ summary(df_2019_clean[, cols_matched])
 ```
 It appears that for 2019, which is the last year that we still have fisheries data (FSS), we only have 43 countries that have data for all the variables of interest.
 
+Checking pairwise for countries if we just do a direct X and Y relationship
+```{r}
+vars_y <- c("PFL", "FSS")
+vars_x <- c("CDA", "CHA", "FGA", "NDA")
+control <- "GDP"
+year <- "2019"
+
+pair_2019 <- do.call(rbind, lapply(vars_y, function(yv) {
+  do.call(rbind, lapply(vars_x, function(xv) {
+    cols <- c(
+      paste0(yv, ".raw.", year),
+      paste0(xv, ".raw.", year),
+      paste0(control, ".raw.", year)
+    )
+    
+    temp <- df[, c("country", cols)]
+    
+    data.frame(
+      y_var = yv,
+      x_var = xv,
+      year = as.integer(year),
+      n_countries = nrow(na.omit(temp))
+    )
+  }))
+}))
+
+pair_2019[order(-pair_2019$n_countries), ]
+```
+
+Checking Year overlaps
+```{r}
+vars_y <- c("PFL", "FSS")
+vars_x <- c("CDA", "CHA", "FGA", "NDA")
+
+get_years <- function(var, data) {
+  cols <- colnames(data)[grepl(paste0("^", var, "\\.raw\\."), colnames(data))]
+  sub(paste0("^", var, "\\.raw\\.(\\d{4})$"), "\\1", cols)
+}
+
+count_pair_nonmissing <- function(y_var, x_var, year, data) {
+  y_col <- paste0(y_var, ".raw.", year)
+  x_col <- paste0(x_var, ".raw.", year)
+  
+  if (!(y_col %in% colnames(data)) || !(x_col %in% colnames(data))) return(NA_integer_)
+  
+  sum(!is.na(data[[y_col]]) & !is.na(data[[x_col]]))
+}
+
+pair_results <- do.call(rbind, lapply(vars_y, function(yv) {
+  do.call(rbind, lapply(vars_x, function(xv) {
+    
+    overlap_years <- sort(intersect(get_years(yv, df), get_years(xv, df)))
+    
+    if (length(overlap_years) == 0) {
+      return(data.frame(
+        y_var = yv,
+        x_var = xv,
+        n_overlap_years = 0,
+        overlap_years = NA_character_,
+        best_year = NA_character_,
+        best_n_complete = NA_integer_
+      ))
+    }
+    
+    counts <- sapply(overlap_years, function(yr) count_pair_nonmissing(yv, xv, yr, df))
+    best_idx <- which.max(counts)
+    
+    data.frame(
+      y_var = yv,
+      x_var = xv,
+      n_overlap_years = length(overlap_years),
+      overlap_years = paste(overlap_years, collapse = ", "),
+      best_year = overlap_years[best_idx],
+      best_n_complete = counts[best_idx]
+    )
+  }))
+}))
+
+pair_results[order(-pair_results$best_n_complete), ]
+```
+
+---
+
+## Variable Selection Decision
+
+```{r variable-selection-stats}
+# Compute all stats used in the variable selection narrative below
+n_fcl     <- sum(!is.na(df[["FCL.raw.2012"]]))
+n_pfl     <- sum(!is.na(df[["PFL.raw.2012"]]))
+r_fcl_pfl <- round(cor(df[["FCL.raw.2012"]], df[["PFL.raw.2012"]],
+                        use = "complete.obs"), 3)
+
+temp <- data.frame(
+  POP     = df[["POP.raw.2012"]],
+  CDO = df[["CDO.raw.2012"]],
+  NOX = df[["NOX.raw.2012"]],
+  SO2 = df[["SO2.raw.2012"]],
+  CH4 = df[["CH4.raw.2012"]],
+  FCL = df[["FCL.raw.2012"]],
+  GDP = df[["GDP.raw.2012"]],
+  CDO_pc  = df[["CDO.raw.2012"]] / df[["POP.raw.2012"]],
+  NOX_pc  = df[["NOX.raw.2012"]] / df[["POP.raw.2012"]],
+  SO2_pc  = df[["SO2.raw.2012"]] / df[["POP.raw.2012"]],
+  CH4_pc  = df[["CH4.raw.2012"]] / df[["POP.raw.2012"]],
+  FCL_raw = df[["FCL.raw.2012"]],
+  GDP_pc  = df[["GPC.raw.2012"]]
+)
+temp$log_CDO <- log(pmax(temp$CDO,  1e-10))
+temp$log_NOX <- log(pmax(temp$NOX,  1e-10))
+temp$log_SO2 <- log(pmax(temp$SO2,  1e-10))
+temp$log_CH4 <- log(pmax(temp$CH4,  1e-10))
+temp$log_FCL <- log(pmax(temp$FCL, 1e-10))
+temp$log_GDP <- log(pmax(temp$GDP,  1e-10))
+temp$log_POP <- log(pmax(temp$POP,  1e-10))
+temp <- na.omit(temp)
+
+r_cdo_fcl <- round(cor(temp$log_CDO, temp$log_FCL), 3)
+r_so2_fcl <- round(cor(temp$log_SO2, temp$log_FCL), 3)
+r_ch4_fcl <- round(cor(temp$log_CH4, temp$log_FCL), 3)
+r_cdo_gdp <- round(cor(temp$log_CDO, temp$log_GDP), 3)
+r_cdo_so2 <- round(cor(temp$log_CDO, temp$log_SO2), 3)
+r_cdo_ch4 <- round(cor(temp$log_CDO, temp$log_CH4), 3)
+r_cdo_nox <- round(cor(temp$log_CDO, temp$log_NOX), 3)
+
+cat("FCL complete cases (2012):", n_fcl, "\n")
+cat("PFL complete cases (2012):", n_pfl, "\n")
+cat("r(FCL, PFL):", r_fcl_pfl, "\n")
+cat("r(log_CDO, log_FCL):", r_cdo_fcl, "\n")
+cat("r(log_SO2, log_FCL):", r_so2_fcl, "\n")
+cat("r(log_CH4, log_FCL):", r_ch4_fcl, "\n")
+cat("r(log_CDO, log_GDP):", r_cdo_gdp, "\n")
+cat("r(log_CDO, log_SO2):", r_cdo_so2, "\n")
+cat("r(log_CDO, log_CH4):", r_cdo_ch4, "\n")
+cat("r(log_CDO, log_NOX):", r_cdo_nox, "\n")
+```
+
+**Y: FCL (tree cover loss weighted by permanency)**
+FCL gives `r n_fcl` complete cases vs `r n_pfl` for PFL. Both capture
+ecosystem degradation from deforestation and are highly correlated
+(r = `r r_fcl_pfl`). FCL is preferred purely for statistical power.
+
+**X: CDO per capita (log-transformed)**
+CO2 emissions from fossil fuels, normalized by population. We exclude
+land use emissions to avoid circularity with our Y variable. Correlation
+with log(FCL): r = `r r_cdo_fcl`.
+
+**Robustness X: SO2 per capita (log-transformed)**
+Sulfur dioxide emissions from industrial combustion and smelting, a
+distinct signal of heavy industrial activity. Correlation with log(FCL):
+r = `r r_so2_fcl`. Less collinear with CDO (r = `r r_cdo_so2`) than
+GDP, making it a cleaner robustness check.
+
+**Dropped: CH4**
+Weakest correlation with log(FCL): r = `r r_ch4_fcl`. High collinearity
+with CDO makes it redundant.
+
+**Dropped: GDP as standalone control**
+log(CDO per capita) and log(GDP per capita) are correlated at
+r = `r r_cdo_gdp`, making GDP nearly redundant as a separate predictor.
+Retained only as interaction term to test the EKC hypothesis.
+
+---
+
+## Why CDO Alone Represents Industrial Activity
+
+CDO is highly correlated with all other industrial emissions measures,
+meaning it acts as a reliable proxy for the broader industrial footprint
+of a country. CDO's strong correlations with NOX (r = `r r_cdo_nox`),
+SO2 (r = `r r_cdo_so2`), and GDP (r = `r r_cdo_gdp`) confirm that once
+you know a country's CO2 output, you already know a great deal about its
+other emissions and wealth.
+
+```{r correlation-heatmap, fig.height=5, fig.width=6}
+vars <- c("log_CDO", "log_NOX", "log_SO2",
+          "log_CH4", "log_GDP", "log_POP", "log_FCL")
+
+cor_matrix <- cor(temp[, vars], use = "complete.obs")
+
+rownames(cor_matrix) <- c("CDO", "NOX", "SO2", "CH4", "GDP", "POP", "FCL")
+colnames(cor_matrix) <- c("CDO", "NOX", "SO2", "CH4", "GDP", "POP", "FCL")
+
+col_palette <- colorRampPalette(c("steelblue", "white", "coral"))(99)
+
+image(
+  1:7, 1:7, t(cor_matrix[7:1, ]),
+  col = col_palette,
+  axes = FALSE,
+  xlab = "",
+  ylab = "",
+  main = "Correlation Matrix — Industrial Activity Variables (2012)"
+)
+
+axis(1, at = 1:7, labels = colnames(cor_matrix), las = 2)
+axis(2, at = 1:7, labels = rev(rownames(cor_matrix)), las = 1)
+
+for (i in 1:7) {
+  for (j in 1:7) {
+    text(
+      j, 8 - i,
+      round(cor_matrix[i, j], 2),
+      cex = 0.85,
+      font = 2,
+      col = ifelse(abs(cor_matrix[i, j]) > 0.6, "white", "black")
+    )
+  }
+}
+
+```
+
+---
+
+## Build Analysis Datasets
+
+Training year: 2012 (138 countries, maximum data). Test year: 2022.
+
+```{r build-datasets}
+library(dplyr)
+library(stargazer)
+
+build_year_df <- function(data, year) {
+  out <- data.frame(
+    country = data$country,
+    iso     = data$iso,
+    POP     = data[[paste0("POP.raw.", year)]],
+    CDO     = data[[paste0("CDO.raw.", year)]],
+    NOX     = data[[paste0("NOX.raw.", year)]],
+    SO2     = data[[paste0("SO2.raw.", year)]],
+    CH4     = data[[paste0("CH4.raw.", year)]],
+    FCL     = data[[paste0("FCL.raw.", year)]],
+    GDP     = data[[paste0("GDP.raw.", year)]],
+    CDO_pc  = data[[paste0("CDO.raw.", year)]] / data[[paste0("POP.raw.", year)]],
+    NOX_pc  = data[[paste0("NOX.raw.", year)]] / data[[paste0("POP.raw.", year)]],
+    SO2_pc  = data[[paste0("SO2.raw.", year)]] / data[[paste0("POP.raw.", year)]],
+    CH4_pc  = data[[paste0("CH4.raw.", year)]] / data[[paste0("POP.raw.", year)]],
+    FCL_raw = data[[paste0("FCL.raw.", year)]],
+    GDP_pc  = data[[paste0("GPC.raw.", year)]],
+    HPE     = data[[paste0("HPE.raw.", year)]] # proxy for industry maturity
+    #NOD     = data[[paste0("NOD.raw.", year)]] # proxy for industry maturity
+    #SOE     = data[[paste0("SOE.raw.", year)]] # proxy for industry maturity
+  )
+  out$log_CDO <- log(pmax(out$CDO, 1e-10))
+  out$log_NOX <- log(pmax(out$NOX, 1e-10))
+  out$log_SO2 <- log(pmax(out$SO2, 1e-10))
+  out$log_CH4 <- log(pmax(out$CH4, 1e-10))
+  out$log_FCL <- log(pmax(out$FCL, 1e-10))
+  out$log_GDP <- log(pmax(out$GDP, 1e-10))
+  out$log_POP <- log(pmax(out$POP, 1e-10))
+  out$log_HPE <- log(pmax(out$HPE, 1e-10)) # proxy for industry maturity
+  out$year    <- year
+  na.omit(out)
+}
+
+df_train <- build_year_df(df, 2012)
+df_test  <- build_year_df(df, 2022)
+
+cat("Training set (2012):", nrow(df_train), "countries\n")
+cat("Test set    (2022):", nrow(df_test),  "countries\n")
+```
+
+---
+
+## Exploratory Data Analysis
+
+### Distributions: Raw vs Log
+
+```{r}
+
+# Turned histogram plotting into a function - are you guys OK with this? If not that's fine.
+
+plot_raw_log_hist <- function(df, var, bins = 25, col = "mediumpurple") {
+  
+  raw_vals <- df[[var]]
+  log_vals <- log(pmax(raw_vals, 1e-10))
+  
+  par(mfrow = c(1, 2))
+  
+  # Raw
+  hist(raw_vals,
+       breaks = bins,
+       col = col,
+       border = NA,
+       main = paste0(var, " — Raw | mean = ",
+                     round(mean(raw_vals, na.rm = TRUE), 2)),
+       xlab = var)
+  
+  abline(v = mean(raw_vals, na.rm = TRUE),
+         col = "red", lwd = 2, lty = 2)
+  
+  # Log
+  hist(log_vals,
+       breaks = bins,
+       col = col,
+       border = NA,
+       main = paste0(var, " — Log | mean = ",
+                     round(mean(log_vals, na.rm = TRUE), 2)),
+       xlab = paste0("log(", var, ")"))
+  
+  abline(v = mean(log_vals, na.rm = TRUE),
+         col = "red", lwd = 2, lty = 2)
+  
+  par(mfrow = c(1, 1))
+}
+
+plot_raw_log_hist(df_train, "FCL_raw")
+plot_raw_log_hist(df_train, "CDO")
+plot_raw_log_hist(df_train, "POP")
+plot_raw_log_hist(df_train, "GDP")
+plot_raw_log_hist(df_train, "SO2")
+plot_raw_log_hist(df_train, "HPE")
+
+
+```
+
+
+```{r eda-distributions-fcl, fig.height=3.5, fig.width=9}
+par(mfrow = c(1, 2))
+
+hist(df_train$FCL_raw, breaks = 25, col = "mediumpurple", border = NA,
+     main = "FCL — Raw", xlab = "Tree Cover Loss (proportion)")
+abline(v = mean(df_train$FCL_raw), col = "red", lwd = 2, lty = 2)
+
+hist(df_train$log_FCL, breaks = 25, col = "mediumpurple", border = NA,
+     main = paste0("FCL — Log  |  mean = ",
+                   round(mean(df_train$log_FCL), 2)),
+     xlab = "log(Tree Cover Loss)")
+abline(v = mean(df_train$log_FCL), col = "red", lwd = 2, lty = 2)
+
+par(mfrow = c(1, 1))
+```
+
+```{r eda-distributions-cdo, fig.height=3.5, fig.width=9}
+par(mfrow = c(1, 2))
+
+hist(df_train$CDO, breaks = 25, col = "steelblue", border = NA,
+     main = "CO2 — Raw", xlab = "CO2 (Gg)")
+abline(v = mean(df_train$CDO), col = "red", lwd = 2, lty = 2)
+
+hist(df_train$log_CDO, breaks = 25, col = "steelblue", border = NA,
+     main = paste0("CO2 per Capita — Log  |  mean = ",
+                   round(mean(df_train$log_CDO), 2)),
+     xlab = "log(CO2 per capita)")
+abline(v = mean(df_train$log_CDO), col = "red", lwd = 2, lty = 2)
+
+par(mfrow = c(1, 1))
+```
+
+```{r eda-distributions-so2, fig.height=3.5, fig.width=9}
+par(mfrow = c(1, 2))
+
+hist(df_train$SO2_pc, breaks = 25, col = "coral", border = NA,
+     main = "SO2 per Capita — Raw", xlab = "SO2 per capita (Gg/person)")
+abline(v = mean(df_train$SO2_pc), col = "red", lwd = 2, lty = 2)
+
+hist(df_train$log_SO2, breaks = 25, col = "coral", border = NA,
+     main = paste0("SO2 per Capita — Log  |  mean = ",
+                   round(mean(df_train$log_SO2), 2)),
+     xlab = "log(SO2 per capita)")
+abline(v = mean(df_train$log_SO2), col = "red", lwd = 2, lty = 2)
+
+par(mfrow = c(1, 1))
+```
+
+```{r eda-distributions-gdp, fig.height=3.5, fig.width=9}
+par(mfrow = c(1, 2))
+
+hist(df_train$GDP_pc, breaks = 25, col = "seagreen", border = NA,
+     main = "GDP per Capita — Raw", xlab = "GDP per capita (USD)")
+abline(v = mean(df_train$GDP_pc), col = "red", lwd = 2, lty = 2)
+
+hist(df_train$log_GDP, breaks = 25, col = "seagreen", border = NA,
+     main = paste0("GDP per Capita — Log  |  mean = ",
+                   round(mean(df_train$log_GDP), 2)),
+     xlab = "log(GDP per capita)")
+abline(v = mean(df_train$log_GDP), col = "red", lwd = 2, lty = 2)
+
+par(mfrow = c(1, 1))
+```
+
+### Scatterplots: X vs Y
+
+```{r eda-scatter, fig.height=4, fig.width=11}
+par(mfrow = c(1, 3))
+
+plot(df_train$log_CDO, df_train$log_FCL,
+     xlab = "log(CO2 per capita)", ylab = "log(Tree Cover Loss)",
+     main = paste0("CO2 vs FCL  |  r = ",
+                   round(cor(df_train$log_CDO, df_train$log_FCL), 3)),
+     pch = 19, col = rgb(0.2, 0.4, 0.8, 0.5), cex = 0.8)
+abline(lm(log_FCL ~ log_CDO, data = df_train), col = "red", lwd = 2)
+
+plot(df_train$log_SO2, df_train$log_FCL,
+     xlab = "log(SO2 per capita)", ylab = "log(Tree Cover Loss)",
+     main = paste0("SO2 vs FCL  |  r = ",
+                   round(cor(df_train$log_SO2, df_train$log_FCL), 3)),
+     pch = 19, col = rgb(0.8, 0.4, 0.2, 0.5), cex = 0.8)
+abline(lm(log_FCL ~ log_SO2, data = df_train), col = "red", lwd = 2)
+
+plot(df_train$log_GDP, df_train$log_FCL,
+     xlab = "log(GDP per capita)", ylab = "log(Tree Cover Loss)",
+     main = paste0("GDP vs FCL  |  r = ",
+                   round(cor(df_train$log_GDP, df_train$log_FCL), 3)),
+     pch = 19, col = rgb(0.2, 0.7, 0.4, 0.5), cex = 0.8)
+abline(lm(log_FCL ~ log_GDP, data = df_train), col = "red", lwd = 2)
+
+par(mfrow = c(1, 1))
+```
+
+### Correlation Matrix (Training Set)
+
+```{r eda-correlation}
+cor_vars <- df_train[, c("log_CDO", "log_SO2", "log_GDP", "log_POP", "HPE", "log_FCL")]
+round(cor(cor_vars, use = "complete.obs"), 3)
+pairs(cor_vars)
+```
+
+---
+
+## Models
+
+### Model 1: Simplest credible model
+
+```{r model1}
+
+m1 <- lm(log_FCL ~ log_CDO + log_POP, data = df_train)
+summary(m1)
+```
+
+### Model 2: EKC interaction (CDO * GDP)
+
+```{r model2}
+m2 <- lm(log_FCL ~ log_CDO * log_GDP, data = df_train)
+summary(m2)
+```
+# QW MODELING START -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### Model 2b: EKC interaction (using some kind of maturity variable)
+
+### Potentially HPE (human pollution exposure) can be an indicator of 'first-world' country behavior
+
+```{r model2}
+
+m2b <- lm(log_FCL ~ log_CDO + log_POP + HPE, data = df_train)
+summary(m2b)
+plot(m2b)
+print(round(vif(m2b), 3))
+print(bptest(m2b))
+```
+
+### Add on SO2
+
+```{r}
+
+m2c <- lm(log_FCL ~ log_CDO + log_POP + log_SO2 + HPE, data = df_train)
+summary(m2c)
+print(round(vif(m2b), 3))
+print(bptest(m2b))
+plot(m2c)
+
+```
+
+### Model 3b: SO2 as primary X (replaces CDO)
+
+```{r model3b}
+m3b <- lm(log_FCL ~ log_SO2 * log_GDP, data = df_train)
+summary(m3b)
+```
+
+### Regression Table
+
+```{r regression-table, results='asis'}
+stargazer(m1, m2, m3a, m3b,
+          type             = "text",
+          title            = "Tree Cover Loss on Industrial Activity (Training Year: 2012)",
+          dep.var.labels   = "log(Tree Cover Loss)",
+          covariate.labels = c("log(CO2 per capita)",
+                               "log(GDP per capita)",
+                               "log(SO2 per capita)",
+                               "log(CO2) x log(GDP)",
+                               "log(SO2) x log(GDP)"),
+          omit.stat        = c("f", "ser"),
+          star.cutoffs     = c(0.05, 0.01, 0.001))
+```
+
+---
+
+## Model Diagnostics (Model 2)
+
+```{r diagnostics, fig.height=7, fig.width=10}
+par(mfrow = c(2, 2))
+plot(m2, which = 1, main = "Residuals vs Fitted")
+plot(m2, which = 2, main = "Q-Q Plot")
+plot(m2, which = 3, main = "Scale-Location")
+plot(m2, which = 5, main = "Residuals vs Leverage")
+par(mfrow = c(1, 1))
+```
+
+```{r assumption-tests}
+cat("=== VIF (Model 2) ===\n")
+print(round(vif(m2), 3))
+
+cat("\n=== Breusch-Pagan Test (Model 2) ===\n")
+print(bptest(m2))
+```
+
+---
+
+## Out-of-Sample Test (2022)
+
+```{r out-of-sample, fig.height=4, fig.width=6}
+df_test$predicted <- predict(m2c, newdata = df_test)
+
+rmse_train <- round(sqrt(mean(residuals(m2)^2)), 4)
+rmse_test  <- round(sqrt(mean((df_test$log_FCL - df_test$predicted)^2,
+                               na.rm = TRUE)), 4)
+
+ss_res <- sum((df_test$log_FCL - df_test$predicted)^2, na.rm = TRUE)
+ss_tot <- sum((df_test$log_FCL - mean(df_test$log_FCL))^2, na.rm = TRUE)
+r2_test <- round(1 - ss_res / ss_tot, 4)
+
+cat("RMSE (train, 2012):", rmse_train, "\n")
+cat("RMSE (test,  2022):", rmse_test,  "\n")
+cat("R2   (train)      :", round(summary(m2)$r.squared, 4), "\n")
+cat("R2   (test,  2022):", r2_test, "\n")
+
+plot(df_test$predicted, df_test$log_FCL,
+     xlab = "Predicted log(FCL)", ylab = "Actual log(FCL)",
+     main = paste0("Out-of-Sample: 2022\n",
+                   "RMSE train = ", rmse_train,
+                   "  |  RMSE test = ", rmse_test),
+     pch = 19, col = rgb(0.2, 0.6, 0.4, 0.6))
+abline(0, 1, col = "red", lwd = 2, lty = 2)
+```
