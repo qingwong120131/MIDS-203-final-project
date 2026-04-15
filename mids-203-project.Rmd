@@ -498,10 +498,14 @@ m3c <- lm(log_FCL ~ log_CDO * HPE + log_POP + SNM, data = df_train)
 summary(m3c)
 ```
 
-### Adding geographic location and continent (Model M4 and M5)
+### Model 4: log(CDO) + log(POP) + HPE + SNM + Coastal/Landlocked
 
-```{r}
-country_list <- df_train$country
+Builds on Model 2c by adding a binary geographic indicator for whether
+a country is landlocked or coastal. Landlocked countries lack ocean
+access and may have different deforestation patterns than coastal nations.
+
+```{r model4}
+library(tidyr)
 
 landlocked <- c(
   "Afghanistan", "Armenia", "Azerbaijan", "Bhutan", "Bolivia",
@@ -515,17 +519,10 @@ landlocked <- c(
   "Zambia", "Zimbabwe", "Austria", "Belarus"
 )
 
-library(tidyr)
+df_train$type <- ifelse(df_train$country %in% landlocked, "landlocked", "coastal")
+df_test$type  <- ifelse(df_test$country  %in% landlocked, "landlocked", "coastal")
 
-coastal <- setdiff(country_list, landlocked)
-
-df_train$type <- ifelse(
-  df_train$country %in% landlocked, "landlocked",
-  ifelse(df_train$country %in% coastal, "coastal", NA)
-)
-
-df_train %>%
-  count(type)
+df_train %>% count(type)
 
 vars <- df_train %>%
   select(log_FCL, log_CDO, log_POP, HPE, SNM, type) %>%
@@ -534,31 +531,32 @@ vars <- df_train %>%
 ggplot(vars, aes(x = value, fill = type)) +
   geom_histogram(alpha = 0.6, bins = 30, position = "identity") +
   facet_wrap(~variable, scales = "free") +
-  theme_minimal()
+  theme_minimal() +
+  labs(title = "Variable Distributions by Country Type (Coastal vs Landlocked)")
 
-# Building off model 2c
 m4 <- lm(log_FCL ~ log_CDO + log_POP + HPE + SNM + type, data = df_train)
 summary(m4)
-
 ```
-What about continents?
 
-```{r}
+### Model 5: log(CDO) + log(POP) + HPE + SNM + Continent
+
+Builds on Model 2c by adding continent as a categorical variable.
+Continent captures broad geographic and ecological differences —
+tropical continents like Africa and South America have far more
+forest cover and deforestation pressure than Europe or Oceania.
+
+```{r model5}
 library(countrycode)
 
-df_train$continent <- countrycode(
-  df_train$iso,
-  origin = "iso3c",
-  destination = "continent"
-)
+df_train$continent <- countrycode(df_train$iso, origin = "iso3c",
+                                   destination = "continent")
+df_test$continent  <- countrycode(df_test$iso,  origin = "iso3c",
+                                   destination = "continent")
 
-# Building off model 2c
-m5 <- lm(log_FCL ~ log_CDO + log_POP + HPE + SNM + continent, data = df_train)
+m5 <- lm(log_FCL ~ log_CDO + log_POP + HPE + SNM + continent,
+         data = df_train)
 summary(m5)
-
-
 ```
-
 
 ### Regression Table
 
