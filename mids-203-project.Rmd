@@ -297,7 +297,7 @@ forest loss beyond industrial emissions alone.
 ```{r correlation-heatmap, fig.height=5, fig.width=6}
 vars <- c("log_CDO", "log_SO2", "log_GDP", "log_POP", "HPE", "SNM", "log_FCL")
 cor_matrix <- cor(temp[, vars], use = "complete.obs")
-labels <- c("CDO", "SO2", "GDP", "POP", "HPE", "SNM", "FCL")
+labels <- c("Log CDO", "Log SO2", "Log GDP", "Log POP", "HPE", "SNM", "Log FCL")
 
 rownames(cor_matrix) <- labels
 colnames(cor_matrix) <- labels
@@ -307,6 +307,7 @@ n <- length(labels)
 col_palette <- colorRampPalette(c("steelblue", "white", "coral"))(99)
 
 # Plot heatmap
+par(mar = c(5, 8, 4, 2))  # bottom, left, top, right
 image(1:n, 1:n, t(cor_matrix[n:1, ]),
       col = col_palette, axes = FALSE,
       xlab = "", ylab = "",
