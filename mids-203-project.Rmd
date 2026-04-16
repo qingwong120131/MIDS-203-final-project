@@ -631,3 +631,9 @@ plot(df_test$predicted, df_test$log_FCL,
      pch = 19, col = rgb(0.2, 0.6, 0.4, 0.6))
 abline(0, 1, col = "red", lwd = 2, lty = 2)
 ```
+
+### Also try to fit the same parameters as model 2c to the test data
+```{r model2c_test}
+m2c_test <- lm(log_FCL ~ log_CDO + log_POP + HPE + SNM, data = df_test)
+summary(m2c_test)
+```
