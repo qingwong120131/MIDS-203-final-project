@@ -19,10 +19,7 @@ Added column names bc i got a little confused -Malachi
 ```{r}
 colnames(df)[grepl("PFL|FSS|CDA|CHA|FGA|NDA", colnames(df))]
 ```
-First task: examine the data for cleanliness issues
 
-- Realizing that a lot of the variables in the dataset are missing like 50% of the rows...so let's first rank all the possible Y variables (in 'ecosystem vitality on page 3') and X variables (in 'climate change on page 4') based on how many NA rows there are, then choose based on a tradeoff between relevance and # of missing rows.
-- I'm using 2019, which is the last year with fisheries data (see page 130/131)
 
 ```{r}
 ecosystem_vars <- c(
@@ -324,6 +321,29 @@ for (i in 1:n) {
 
 ---
 
+## QW 4/14, simple dimensions
+```{r}
+year <- "2012"
+
+vars <- c("FCL","PFL","FSS","CDO", "NOX","SO2", "GDP", "POP","HPE", "SNM")
+
+missing_table <- data.frame(
+  variable = vars,
+  column   = paste0(vars, ".raw.", year),
+  missing_n = sapply(vars, function(v) {
+    col <- paste0(v, ".raw.", year)
+    sum(is.na(df[[col]]))
+  }),
+  total_n = nrow(df)
+)
+
+missing_table$missing_pct <- round(100 * missing_table$missing_n / missing_table$total_n, 1)
+
+missing_table[order(missing_table$missing_n), ]
+```
+
+
+
 ## Build Analysis Datasets
 
 ```{r build-datasets}
@@ -466,6 +486,11 @@ industrial emissions.
 ```{r model2c}
 m2c <- lm(log_FCL ~ log_CDO + log_POP + HPE + SNM, data = df_train)
 summary(m2c)
+```
+
+```{r model2d}
+m2d <- lm(log_FCL ~ log_CDO + log_POP + HPE + I(HPE^2) + SNM + I(SNM^2), data = df_train)
+summary(m2d)
 ```
 
 ### Model 3a: log(CDO) * log(GDP) + log(POP)
