@@ -295,27 +295,30 @@ forest loss beyond industrial emissions alone.
 ## Why CDO Alone Represents Industrial Activity
 
 ```{r correlation-heatmap, fig.height=5, fig.width=6}
-vars <- c("log_CDO", "log_NOX", "log_SO2", "log_CH4",
-          "log_GDP", "log_POP", "log_SNM", "log_FCL")
-
+vars <- c("log_CDO", "log_SO2", "log_GDP", "log_POP", "HPE", "SNM", "log_FCL")
 cor_matrix <- cor(temp[, vars], use = "complete.obs")
-labels <- c("CDO", "NOX", "SO2", "CH4", "GDP", "POP", "SNM", "FCL")
+labels <- c("CDO", "SO2", "GDP", "POP", "HPE", "SNM", "FCL")
+
 rownames(cor_matrix) <- labels
 colnames(cor_matrix) <- labels
 
+# Color palette
 n <- length(labels)
 col_palette <- colorRampPalette(c("steelblue", "white", "coral"))(99)
 
+# Plot heatmap
 image(1:n, 1:n, t(cor_matrix[n:1, ]),
       col = col_palette, axes = FALSE,
       xlab = "", ylab = "",
-      main = "Correlation Matrix — All Variables (2012)")
+      main = "Correlation Matrix — Selected Variables (2012)")
 axis(1, at = 1:n, labels = labels, las = 2)
 axis(2, at = 1:n, labels = rev(labels), las = 1)
 
+# Add correlation values
 for (i in 1:n) {
   for (j in 1:n) {
-    text(j, n + 1 - i, round(cor_matrix[i, j], 2),
+    text(j, n - i + 1,
+         round(cor_matrix[i, j], 2),
          cex = 0.75, font = 2,
          col = ifelse(abs(cor_matrix[i, j]) > 0.6, "white", "black"))
   }
